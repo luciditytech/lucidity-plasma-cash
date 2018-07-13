@@ -39,14 +39,12 @@ contract Plasma is Ownable {
 
     mapping(uint => Block) public childChain;
 
-    function Plasma() public
-    {
+    function Plasma() public {
         depositCount = 0;
         currentBlkNum = 0;
     }
 
-    function submitBlock(bytes32 _blkRoot, uint _blknum) public onlyOperator
-    {
+    function submitBlock(bytes32 _blkRoot, uint _blknum) public onlyOperator {
         require(currentBlkNum + 1 == _blknum);
 
         Block memory newBlock = Block({
@@ -54,7 +52,6 @@ contract Plasma is Ownable {
             merkle_root: _blkRoot,
             time: block.timestamp
         });
-
 
         childChain[_blknum] = newBlock;
         currentBlkNum += 1;
@@ -69,8 +66,7 @@ contract Plasma is Ownable {
 
     event Deposit(address _depositor, uint indexed _amount, bytes32 indexed _uid);
 
-    function deposit(address _currency, uint _amount) payable public
-    {
+    function deposit(address _currency, uint _amount) payable public {
         if (_currency == address(0)) {
             require(_amount * ETH_RATIO == msg.value);
         } else {
@@ -83,13 +79,11 @@ contract Plasma is Ownable {
         Deposit(msg.sender, _amount, uid);
     }
 
-    function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public constant returns (bool success)
-    {
+    function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public constant returns (bool success) {
         return MerkleProof.verifyProof(_proof, _root, _leaf, _index);
     }
 
-    function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public constant returns (bool success)
-    {
+    function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public constant returns (bool success) {
         Block memory block = childChain[_blockIndex];
         assert(block.block_num == _blockIndex);
         Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
@@ -98,8 +92,7 @@ contract Plasma is Ownable {
         return MerkleProof.verifyProof(_proof, block.merkle_root, hash, transaction.uid);
     }
 
-    function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public constant returns (bool success)
-    {
+    function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public constant returns (bool success) {
         Block memory block = childChain[_blockIndex];
         assert(block.block_num == _blockIndex);
 
