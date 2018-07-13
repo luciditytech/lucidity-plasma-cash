@@ -2,12 +2,7 @@ const ethjsUtil = require('ethereumjs-util');
 const secp256k1 = require('secp256k1');
 const crypto = require('crypto');
 
-const Header = require('../js/lib/Header');
-const MerkleTree = require('../js/lib/merkleTree');
 const SparseMerkleTree = require('../js/lib/SparseMerkleTree');
-const { Transaction, TransactionInput, TransactionOutput } = require('../js/lib/Transaction');
-const Signature = require('../js/lib/Signature');
-const UTXO = require('../js/lib/UTXO');
 
 const { sha3, sha256, bufferToHex } = require('ethereumjs-util');
 
