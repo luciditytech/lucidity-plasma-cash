@@ -6,7 +6,7 @@ import "../contracts/Plasma.sol";
 
 contract TestPlasma {
 
-    /*Plasma plasma = new Plasma();
+    Plasma plasma = new Plasma();
 
     function testSetOperator() public {
         Assert.equal(plasma.setOperator(this, true), true, "Set an operator.");
@@ -14,5 +14,5 @@ contract TestPlasma {
 
     function testOwnerIsOperator() public {
         Assert.equal(plasma.isOperator(), true, "Owner is an operator.");
-    }*/
+    }
 }
