@@ -1,7 +1,5 @@
 const web3Utils = require('web3-utils');
 const ethjsUtil = require('ethereumjs-util');
-const crypto = require('crypto');
-const secp256k1 = require('secp256k1');
 
 const RLP = require('rlp');
 
@@ -16,6 +14,14 @@ class Transaction {
     Object.defineProperty(this, 'newOwner', {
       value: toPaddedHexString(newOwner, 20),
     });
+  }
+
+  getUID() {
+    return this.uid;
+  }
+
+  getNewOwner() {
+    return this.newOwner;
   }
 
   toRLP() {
@@ -58,9 +64,7 @@ class Transaction {
       r,
       s);
 
-    const addr = ethjsUtil.bufferToHex(ethjsUtil.pubToAddress(pubKey));
-
-    return address === addr;
+    return address === ethjsUtil.bufferToHex(ethjsUtil.pubToAddress(pubKey));
   }
 }
 

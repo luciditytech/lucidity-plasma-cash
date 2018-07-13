@@ -20,9 +20,9 @@ library Transaction {
         RLP.RLPItem[] memory txList = rlp.toRLPItem().toList();
         require(txList.length == 3);
         return TX({
-            uid: txList[1].toUint(),
-            prevBlock: txList[2].toUint(),
-            newOwner: txList[3].toAddress()
+            uid: txList[0].toUint(),
+            prevBlock: txList[1].toUint(),
+            newOwner: txList[2].toAddress()
         });
     }
 
