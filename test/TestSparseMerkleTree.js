@@ -3,7 +3,7 @@ const SparseMerkleTree = require('../js/lib/SparseMerkleTree');
 
 
 describe('SparseMerkleTree', () => {
- /* it('testInit0', () => {
+  it('testInit0', () => {
     const merkleTree = new SparseMerkleTree({
       0: Buffer.from("0"),
       5: Buffer.from("1"),
@@ -76,10 +76,9 @@ describe('SparseMerkleTree', () => {
 
     expect(merkleTree.verifyProof(proof,
       merkleTree.getRoot(), Buffer.from("0"), '0x6a632b283169bb0e4587422b081393d1c2e29af3c36c24735985e9c95c7c0a02')).to.equal(true);
-  });*/
+  });
 
-  /*
-  it('testInit2', () => {
+  xit('testInit2', () => {
     expect(function () {
       new SparseMerkleTree({
         8: Buffer.from("0"),
@@ -87,5 +86,5 @@ describe('SparseMerkleTree', () => {
         2: Buffer.from("2")
       }, 4);
     }).to.throw();
-  });*/
+  });
 });
