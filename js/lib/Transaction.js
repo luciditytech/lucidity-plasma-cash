@@ -53,8 +53,8 @@ class Transaction {
     return new Buffer(ethjsUtil.toRpcSig(v, r, s).substring(2), 'hex');
   }
 
-  signHex() {
-    return `0x${this.sign().toString('hex')}`;
+  signHex(privKey) {
+    return `0x${this.sign(privKey).toString('hex')}`;
   }
 
   verify(signature, address) {

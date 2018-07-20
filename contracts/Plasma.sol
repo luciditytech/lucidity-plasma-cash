@@ -56,12 +56,16 @@ contract Plasma is Ownable {
     }
 
     // deposits
-
-    mapping(uint => bytes32) public depositIndex;
-    mapping(bytes32 => uint) public depositBalance;
+    // TODO: make sure the data is deleted when withdrawn
+    mapping(uint => uint) public depositIndex;
+    mapping(uint => uint) public depositBalance;
     uint public depositCount;
 
-    event Deposit(uint indexed _depositIndex, bytes32 indexed _uid, address _depositor, uint _amount);
+    event Deposit(uint indexed _depositIndex, uint indexed _uid, address _depositor, uint _amount);
+
+    function getUID(address _sender, address _currency, uint _depositCount) constant returns (uint) {
+        return uint(keccak256(msg.sender, _currency, _depositCount));
+    }
 
     function deposit(address _currency, uint _amount) payable public {
         require(_amount > 0);
@@ -71,7 +75,7 @@ contract Plasma is Ownable {
         } else {
             throw;
         }
-        bytes32 uid = keccak256(msg.sender, _currency, depositCount);
+        uint uid = getUID(msg.sender, _currency, depositCount);
 
         depositIndex[depositCount] = uid;
         depositBalance[uid] = _amount;
@@ -88,24 +92,22 @@ contract Plasma is Ownable {
         uint timestamp;
     }
 
-    PriorityQueue exitsQueue;
-    mapping(bytes32 => ExitTX) public exits;
+    uint challengeTimeout;
 
-    event WithdrawDeposit(address _depositor, uint indexed _depositIndex, bytes32 indexed _uid, uint256 indexed _timestamp, uint _amount);
+    PriorityQueue exitsQueue;
+    mapping(uint => ExitTX) public exits;
+
+    event WithdrawDeposit(address _depositor, uint indexed _depositIndex, uint indexed _uid, uint256 indexed _timestamp, uint _amount);
     event ExitStarted(uint indexed _priority);
 
     function withdrawDeposit(uint _depositIndex, address _currency) public {
-        bytes32 uid = depositIndex[_depositIndex];
+        uint uid = depositIndex[_depositIndex];
         require(uid != 0x0);
 
         // check if msg.sender is the right one to withdraw
-        require(keccak256(msg.sender, _currency, _depositIndex) == uid);
+        require(getUID(msg.sender, _currency, _depositIndex) == uid);
 
-        ExitTX memory exitTX = ExitTX({
-            exitor: msg.sender,
-            timestamp: block.timestamp + 60
-        });
-
+        ExitTX memory exitTX = ExitTX(msg.sender, block.timestamp + challengeTimeout);
         addExitToQueue(uid, _depositIndex, exitTX);
 
         uint amount = depositBalance[uid];
@@ -113,7 +115,7 @@ contract Plasma is Ownable {
         WithdrawDeposit(msg.sender, _depositIndex, uid, block.timestamp, amount);
     }
 
-    function addExitToQueue(bytes32 _uid, uint _depositIndex, ExitTX memory exitTX) private {
+    function addExitToQueue(uint _uid, uint _depositIndex, ExitTX memory exitTX) private {
         // check if the withdrawal has been already requested
         require(exits[_uid].timestamp == 0);
 
@@ -124,31 +126,37 @@ contract Plasma is Ownable {
         ExitStarted(priority);
     }
 
-    function getNextExit() public view returns (uint _depositIndex, bytes32 _uid, uint _timestamp) {
+    function getNextExit() public view returns (uint _depositIndex, uint _uid, uint _timestamp) {
         uint256 priority = exitsQueue.getMin();
         _depositIndex = uint256(uint128(priority));
         _uid = depositIndex[_depositIndex];
         _timestamp = priority >> 128;
     }
 
-    event FinalizedExit(address _depositor, uint indexed _depositIndex, uint _amount,  bytes32 indexed _uid, uint256 indexed _timestamp);
+    event FinalizedExit(address _depositor, uint indexed _depositIndex, uint _amount, uint indexed _uid, uint256 indexed _timestamp);
 
     function finalizeExits() public returns (uint _num) {
         uint index;
-        bytes32 uid;
+        uint uid;
         uint exitTimestamp;
 
         uint timestamp = block.timestamp;
 
         (index, uid, exitTimestamp) = getNextExit();
         while (exitTimestamp < timestamp) {
-
             ExitTX memory exitTX = exits[uid];
 
-            uint amount = depositBalance[uid];
-            exitTX.exitor.transfer(amount);
+            if (exitTX.exitor != 0x0) {
+                uint amount = depositBalance[uid];
+                exitTX.exitor.transfer(amount);
 
-            FinalizedExit(exitTX.exitor, index, amount, uid, timestamp);
+                FinalizedExit(exitTX.exitor, index, amount, uid, timestamp);
+
+                delete exits[uid];
+            }
+
+            delete depositIndex[index];
+            delete depositBalance[uid];
 
             exitsQueue.delMin();
             _num += 1;
@@ -161,6 +169,39 @@ contract Plasma is Ownable {
         }
     }
 
+    event DepositWithdrawChallenged(address _challenger, address _depositor, uint indexed _uid, uint _blockIndex);
+
+    // challenge
+    function challengeWithdrawDeposit(uint _blockIndex, bytes _transactionBytes, bytes _proof, bytes signature) public returns (bool success) {
+        Block memory block = childChain[_blockIndex];
+        require(block.blockIndex == _blockIndex);
+        Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
+
+        // check if deposit exists
+        require(depositBalance[transaction.uid] > 0);
+
+        // check if withdrawal exists
+        //require(exits[transaction.uid].timestamp >= block.timestamp);
+
+        bytes32 hash = Transaction.hashTransaction(transaction);
+
+        // check is tx exists
+        require(MerkleProof.verifyProof(_proof, block.merkleRoot, hash, transaction.uid));
+
+        address exitor = exits[transaction.uid].exitor;
+
+        require(Transaction.checkSig(exitor, hash, signature));
+
+        require(exitor != transaction.newOwner);
+
+        // if the ownership was changed then the withdrawal has been challenged
+        delete exits[transaction.uid];
+
+        DepositWithdrawChallenged(msg.sender, exitor, transaction.uid, _blockIndex);
+
+        return true;
+    }
+
     // temp methods
     function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public constant returns (bool success) {
         return MerkleProof.verifyProof(_proof, _root, _leaf, _index);
@@ -168,7 +209,7 @@ contract Plasma is Ownable {
 
     function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public constant returns (bool success) {
         Block memory block = childChain[_blockIndex];
-        assert(block.blockIndex == _blockIndex);
+        require(block.blockIndex == _blockIndex);
         Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
         bytes32 hash = Transaction.hashTransaction(transaction);
 
@@ -177,7 +218,7 @@ contract Plasma is Ownable {
 
     function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public constant returns (bool success) {
         Block memory block = childChain[_blockIndex];
-        assert(block.blockIndex == _blockIndex);
+        require(block.blockIndex == _blockIndex);
 
         return MerkleProof.verifyProof(_proof, block.merkleRoot, 0x0, _uid);
     }
@@ -186,9 +227,11 @@ contract Plasma is Ownable {
         deposit(0x0, msg.value);
     }
 
-    function Plasma() public {
+    function Plasma(uint _challengeTimeout) public {
         depositCount = 0;
         blockCount = 0;
         exitsQueue = new PriorityQueue();
+
+        challengeTimeout = _challengeTimeout;
     }
 }

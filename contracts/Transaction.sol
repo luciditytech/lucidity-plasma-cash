@@ -26,8 +26,8 @@ library Transaction {
         });
     }
 
-    function checkSig(bytes32 txHash, bytes sig) internal view returns (bool) {
-        return msg.sender == ECRecovery.recover(txHash, sig);
+    function checkSig(address signer, bytes32 txHash, bytes sig) internal view returns (bool) {
+        return signer == ECRecovery.recover(txHash, sig);
     }
 
     function hashTransaction(TX memory _transaction) internal returns (bytes32) {
