@@ -15,8 +15,7 @@ library Transaction {
         address newOwner;
     }
 
-    function createTransaction(bytes rlp) internal constant returns (
-        TX memory) {
+    function createTransaction(bytes rlp) internal constant returns (TX memory) {
         RLP.RLPItem[] memory txList = rlp.toRLPItem().toList();
         require(txList.length == 3);
         return TX({
