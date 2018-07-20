@@ -32,7 +32,7 @@ contract Plasma is Ownable {
   }
 
   uint public blockCount;
-  mapping(uint => Block) public childChain;
+  mapping(uint => Block) public blocks;
 
   event BlockSubmitted(uint indexed blockIndex, address operator, bytes32 indexed merkleRoot);
 
@@ -41,7 +41,7 @@ contract Plasma is Ownable {
 
     Block memory newBlock = Block(_merkleRoot, block.timestamp);
 
-    childChain[_blockIndex] = newBlock;
+    blocks[_blockIndex] = newBlock;
 
     BlockSubmitted(_blockIndex, msg.sender, _merkleRoot);
 
@@ -49,10 +49,15 @@ contract Plasma is Ownable {
   }
 
   // deposits
-  mapping(uint => uint) public depositBalance;
+  struct Deposit {
+    address depositor;
+    uint amount;
+  }
+
+  mapping(uint => Deposit) public deposits;
   uint public depositCount;
 
-  event Deposit(uint indexed uid, address depositor, uint amount);
+  event Deposited(uint indexed uid, address depositor, uint amount);
 
   function deposit(address _currency, uint _amount) payable public {
     require(_amount > 0);
@@ -64,9 +69,9 @@ contract Plasma is Ownable {
     }
 
     uint uid = depositCount;
-    depositBalance[uid] = _amount;
+    deposits[uid] = Deposit(msg.sender, _amount);
 
-    Deposit(uid, msg.sender, _amount);
+    Deposited(uid, msg.sender, _amount);
 
     depositCount += 1;
   }
@@ -86,12 +91,12 @@ contract Plasma is Ownable {
   event ExitStarted(uint indexed priority);
 
   function withdrawDeposit(uint _uid) public {
-    require(depositBalance[_uid] > 0); // check if the deposit exists
+    require(deposits[_uid].depositor == msg.sender); // check if the deposit exists and the owner matches
 
     ExitTX memory exitTX = ExitTX(msg.sender, block.timestamp + challengeTimeout);
     addExitToQueue(_uid, exitTX);
 
-    WithdrawDeposit(msg.sender, _uid, block.timestamp, depositBalance[_uid]);
+    WithdrawDeposit(msg.sender, _uid, block.timestamp, deposits[_uid].amount);
   }
 
   function addExitToQueue(uint _uid, ExitTX memory exitTX) private {
@@ -124,13 +129,13 @@ contract Plasma is Ownable {
 
       if (exitTX.exitor != 0x0) {
         // nobody has challenged the exit
-        uint amount = depositBalance[uid];
+        uint amount = deposits[uid].amount;
         exitTX.exitor.transfer(amount);
 
         FinalizedExit(exitTX.exitor, amount, uid, timestamp);
 
         delete exits[uid];
-        delete depositBalance[uid];
+        delete deposits[uid];
       }
 
       exitsQueue.delMin();
@@ -148,10 +153,10 @@ contract Plasma is Ownable {
 
   // challenge
   function challengeWithdrawDeposit(uint _blockIndex, bytes _transactionBytes, bytes _proof, bytes signature) public returns (bool success) {
-    Block memory block = childChain[_blockIndex];
+    Block memory block = blocks[_blockIndex];
     Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
 
-    require(depositBalance[transaction.uid] > 0); // check if the deposit exists
+    require(deposits[transaction.uid].amount > 0); // check if the deposit exists
 
     //require(exits[transaction.uid].timestamp >= block.timestamp); // check if challenge timeout is off
 
@@ -179,7 +184,7 @@ contract Plasma is Ownable {
   }
 
   function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public constant returns (bool success) {
-    Block memory block = childChain[_blockIndex];
+    Block memory block = blocks[_blockIndex];
     Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
     bytes32 hash = Transaction.hashTransaction(transaction);
 
@@ -187,7 +192,7 @@ contract Plasma is Ownable {
   }
 
   function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public constant returns (bool success) {
-    Block memory block = childChain[_blockIndex];
+    Block memory block = blocks[_blockIndex];
 
     return MerkleProof.verifyProof(_proof, block.merkleRoot, 0x0, _uid);
   }

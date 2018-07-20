@@ -55,7 +55,7 @@ contract('Plasma', async ([owner]) => {
       value: amount,
     }));
 
-    const depositEvent = depositRes.logs.find(x => x.event === 'Deposit');
+    const depositEvent = depositRes.logs.find(x => x.event === 'Deposited');
 
     depositTransaction1 = new Transaction('0x' + depositEvent.args.uid.toString(16), 0, depositEvent.args.depositor);
 
@@ -70,7 +70,7 @@ contract('Plasma', async ([owner]) => {
       value: amount,
     }));
 
-    const depositEvent = depositRes.logs.find(x => x.event === 'Deposit');
+    const depositEvent = depositRes.logs.find(x => x.event === 'Deposited');
 
     depositTransaction2 = new Transaction('0x' + depositEvent.args.uid.toString(16), 0, depositEvent.args.depositor);
 
@@ -85,7 +85,7 @@ contract('Plasma', async ([owner]) => {
       value: amount,
     }));
 
-    const depositEvent = depositRes.logs.find(x => x.event === 'Deposit');
+    const depositEvent = depositRes.logs.find(x => x.event === 'Deposited');
 
     depositTransaction3 = new Transaction('0x' + depositEvent.args.uid.toString(16), 0, depositEvent.args.depositor);
 
