@@ -27,7 +27,6 @@ contract Plasma is Ownable {
 
   // blocks
   struct Block {
-    uint blockIndex;
     bytes32 merkleRoot;
     uint256 timestamp;
   }
@@ -40,11 +39,7 @@ contract Plasma is Ownable {
   function submitBlock(bytes32 _merkleRoot, uint _blockIndex) public onlyOperator {
     require(blockCount == _blockIndex);
 
-    Block memory newBlock = Block({
-      blockIndex : _blockIndex,
-      merkleRoot : _merkleRoot,
-      timestamp : block.timestamp
-      });
+    Block memory newBlock = Block(_merkleRoot, block.timestamp);
 
     childChain[_blockIndex] = newBlock;
 
@@ -154,7 +149,6 @@ contract Plasma is Ownable {
   // challenge
   function challengeWithdrawDeposit(uint _blockIndex, bytes _transactionBytes, bytes _proof, bytes signature) public returns (bool success) {
     Block memory block = childChain[_blockIndex];
-    require(block.blockIndex == _blockIndex);
     Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
 
     require(depositBalance[transaction.uid] > 0); // check if the deposit exists
@@ -185,7 +179,6 @@ contract Plasma is Ownable {
 
   function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public constant returns (bool success) {
     Block memory block = childChain[_blockIndex];
-    require(block.blockIndex == _blockIndex);
     Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
     bytes32 hash = Transaction.hashTransaction(transaction);
 
@@ -194,7 +187,6 @@ contract Plasma is Ownable {
 
   function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public constant returns (bool success) {
     Block memory block = childChain[_blockIndex];
-    require(block.blockIndex == _blockIndex);
 
     return MerkleProof.verifyProof(_proof, block.merkleRoot, 0x0, _uid);
   }
