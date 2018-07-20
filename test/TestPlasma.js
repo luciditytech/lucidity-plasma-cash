@@ -244,4 +244,35 @@ contract('Plasma', async ([owner]) => {
       assert.isTrue(err.message.includes('VM Exception'));
     }
   });
+
+  it('withdrawDeposit 3', async function () {
+    const withdrawDepositRes = (await plasma.withdrawDeposit(2));
+
+    const withdrawDepositEvent = withdrawDepositRes.logs.find(x => x.event === 'WithdrawDeposit');
+
+    assert.equal(withdrawDepositEvent.args.uid.toString(16), new BigNumber(depositTransaction3.getUID()).toString(16));
+
+    assert.isDefined(withdrawDepositRes.logs.find(x => x.event === 'ExitStarted').args.priority);
+  });
+
+  it('challenge 3', async function () {
+
+    const txs = {};
+    txs[changeOwnerTransaction3.getUID()] = changeOwnerTransaction3.tid();
+
+    const merkleTree = new SparseMerkleTree(txs);
+    const proof = merkleTree.getHexProofForIndex(changeOwnerTransaction3.getUID());
+
+    const challengeWithdrawDepositRes = (await plasma.challengeWithdrawDeposit(1, changeOwnerTransaction3.toRLPHex(), proof, changeOwnerTransaction3.signHex(privKey)));
+
+    const depositWithdrawChallengedEvent = challengeWithdrawDepositRes.logs.find(x => x.event === 'DepositWithdrawChallenged');
+
+    assert.equal(depositWithdrawChallengedEvent.args.uid.toString(16), new BigNumber(changeOwnerTransaction3.getUID()).toString(16));
+  });
+
+  it('finalize', async function () {
+    const finalizeExitsRes = await plasma.finalizeExits();
+
+    assert.equal(0, finalizeExitsRes.logs.length);
+  });
 });

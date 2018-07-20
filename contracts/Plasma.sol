@@ -112,7 +112,7 @@ contract Plasma is Ownable {
 
   event FinalizedExit(address depositor, uint amount, uint indexed uid, uint256 indexed timestamp);
 
-  function finalizeExits() public returns (uint num) {
+  function finalizeExits() public returns (uint processed) {
     uint uid;
     uint exitTimestamp;
 
@@ -123,18 +123,18 @@ contract Plasma is Ownable {
       ExitTX memory exitTX = exits[uid];
 
       if (exitTX.exitor != 0x0) {
+        // nobody has challenged the exit
         uint amount = depositBalance[uid];
         exitTX.exitor.transfer(amount);
 
         FinalizedExit(exitTX.exitor, amount, uid, timestamp);
 
         delete exits[uid];
+        delete depositBalance[uid];
       }
 
-      delete depositBalance[uid];
-
       exitsQueue.delMin();
-      num += 1;
+      processed += 1;
 
       if (exitsQueue.currentSize() > 0) {
         (uid, exitTimestamp) = getNextExit();
@@ -166,6 +166,7 @@ contract Plasma is Ownable {
     require(exitor != transaction.newOwner); // check if the owner has been changed
 
     delete exits[transaction.uid]; // delete exit
+    // TODO: prevent further challengeWithdrawDeposit calls with the same UID
 
     DepositWithdrawChallenged(msg.sender, exitor, transaction.uid, _blockIndex);
 
