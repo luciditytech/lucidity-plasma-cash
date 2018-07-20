@@ -102,20 +102,20 @@ contract('Plasma', async ([owner]) => {
 
     const merkleTree = new SparseMerkleTree(txs);
 
-    const submitRes = (await plasma.submitBlock(merkleTree.getHexRoot(), 1));
+    const submitRes = (await plasma.submitBlock(merkleTree.getHexRoot(), 0));
 
     const submitEvent = submitRes.logs.find(x => x.event === 'BlockSubmitted');
 
-    assert.equal(submitEvent.args._blockIndex, 1);
+    assert.equal(submitEvent.args._blockIndex, 0);
     assert.equal(submitEvent.args._merkleRoot, merkleTree.getHexRoot());
 
     // prove existence
     const proof1 = merkleTree.getHexProofForIndex(depositTransaction1.getUID());
-    assert.isTrue(await plasma.proveTX(1, depositTransaction1.toRLPHex(), proof1));
+    assert.isTrue(await plasma.proveTX(0, depositTransaction1.toRLPHex(), proof1));
 
     // prove non-existence
     const proof2 = merkleTree.getHexProofForIndex(0);
-    assert.isTrue(await plasma.proveNoTX(1, 0, proof2));
+    assert.isTrue(await plasma.proveNoTX(0, 0, proof2));
   });
 
   it('withdrawDeposit 1', async function () {
@@ -181,11 +181,11 @@ contract('Plasma', async ([owner]) => {
 
     const merkleTree = new SparseMerkleTree(txs);
 
-    const submitRes = (await plasma.submitBlock(merkleTree.getHexRoot(), 2));
+    const submitRes = (await plasma.submitBlock(merkleTree.getHexRoot(), 1));
 
     const submitEvent = submitRes.logs.find(x => x.event === 'BlockSubmitted');
 
-    assert.equal(submitEvent.args._blockIndex, 2);
+    assert.equal(submitEvent.args._blockIndex, 1);
     assert.equal(submitEvent.args._merkleRoot, merkleTree.getHexRoot());
   });
 
@@ -208,7 +208,7 @@ contract('Plasma', async ([owner]) => {
     const merkleTree = new SparseMerkleTree(txs);
     const proof = merkleTree.getHexProofForIndex(changeOwnerTransaction3.getUID());
 
-    const challengeWithdrawDepositRes = (await plasma.challengeWithdrawDeposit(2, changeOwnerTransaction3.toRLPHex(), proof, changeOwnerTransaction3.signHex(privKey)));
+    const challengeWithdrawDepositRes = (await plasma.challengeWithdrawDeposit(1, changeOwnerTransaction3.toRLPHex(), proof, changeOwnerTransaction3.signHex(privKey)));
 
     const depositWithdrawChallengedEvent = challengeWithdrawDepositRes.logs.find(x => x.event === 'DepositWithdrawChallenged');
 

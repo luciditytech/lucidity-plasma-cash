@@ -40,7 +40,7 @@ contract Plasma is Ownable {
     event BlockSubmitted(uint indexed _blockIndex, address _operator, bytes32 indexed _merkleRoot);
 
     function submitBlock(bytes32 _merkleRoot, uint _blockIndex) public onlyOperator {
-        require(blockCount + 1 == _blockIndex);
+        require(blockCount == _blockIndex);
 
         Block memory newBlock = Block({
             blockIndex: _blockIndex,
@@ -48,11 +48,11 @@ contract Plasma is Ownable {
             timestamp: block.timestamp
         });
 
-        blockCount = _blockIndex;
-
-        childChain[blockCount] = newBlock;
+        childChain[_blockIndex] = newBlock;
 
         BlockSubmitted(_blockIndex, msg.sender, _merkleRoot);
+
+        blockCount += 1;
     }
 
     // deposits
