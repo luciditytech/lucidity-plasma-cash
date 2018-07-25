@@ -1,33 +1,24 @@
 pragma solidity ^0.4.0;
 
 import 'zeppelin-solidity/contracts/math/SafeMath.sol';
+import 'zeppelin-solidity/contracts/ownership/Ownable.sol';
 
 /**
  * @title PriorityQueue
  * @dev A priority queue implementation
  */
-contract PriorityQueue {
+contract PriorityQueue is Ownable {
   using SafeMath for uint256;
-
-  /*
-   *  Modifiers
-   */
-  modifier onlyOwner() {
-    require(msg.sender == owner);
-    _;
-  }
 
   /*
    *  Storage
    */
-  address owner;
   uint256[] heapList;
   uint256 public currentSize;
 
   function PriorityQueue()
   public
   {
-    owner = msg.sender;
     heapList = [0];
     currentSize = 0;
   }

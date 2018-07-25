@@ -4,7 +4,7 @@ import 'zeppelin-solidity/contracts/ownership/Ownable.sol';
 import 'zeppelin-solidity/contracts/math/SafeMath.sol';
 import 'zeppelin-solidity/contracts/math/Math.sol';
 import './lib/MerkleProof.sol';
-import './DataStructures/PriorityQueue.sol';
+import './lib/PriorityQueue.sol';
 import './Transaction.sol';
 
 import "./lib/RLP.sol";
