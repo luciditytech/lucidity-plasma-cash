@@ -70,14 +70,14 @@ class SparseMerkleTree {
   verifyProof(proof, root, leaf, idx) {
     idx = add(idx, 0);
     let computedHash = leaf;
-    proof.forEach(function (proofElement) {
+    proof.forEach(proofElement => {
       if (isEven(idx)) {
         computedHash = hash(Buffer.concat([computedHash, proofElement]));
       } else {
         computedHash = hash(Buffer.concat([proofElement, computedHash]));
       }
       idx = div2(idx);
-    }, this);
+    });
 
     return Buffer.compare(computedHash, root) === 0;
   }
@@ -92,7 +92,7 @@ class SparseMerkleTree {
 
       Object.keys(treeLevel)
         .sort()
-        .forEach(function(index) {
+        .forEach(index => {
           const value = treeLevel[index];
           if (isEven(index)) {
             nextLevel[div2(index)] = hash(Buffer.concat([value, this.defaultNodes[level]]));

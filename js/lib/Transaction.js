@@ -62,7 +62,8 @@ class Transaction {
     const pubKey = ethjsUtil.ecrecover(this.tid(),
       v,
       r,
-      s);
+      s
+    );
 
     return address === ethjsUtil.bufferToHex(ethjsUtil.pubToAddress(pubKey));
   }
