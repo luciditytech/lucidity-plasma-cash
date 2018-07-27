@@ -19,6 +19,8 @@ library MerkleProof {
       return false;
     }
 
+    // TODO: move defaultHashes here in order to reduce (_proof) size
+
     bytes32 proofElement;
     bytes32 computedHash = _leaf;
 

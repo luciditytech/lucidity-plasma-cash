@@ -4,70 +4,208 @@ import 'zeppelin-solidity/contracts/ownership/Ownable.sol';
 import 'zeppelin-solidity/contracts/math/SafeMath.sol';
 import 'zeppelin-solidity/contracts/math/Math.sol';
 import './lib/MerkleProof.sol';
+import './lib/PriorityQueue.sol';
+import './Transaction.sol';
 
 import "./lib/RLP.sol";
 
 contract Plasma is Ownable {
+  mapping(address => bool) public operators;
 
-    // operators
-    mapping(address => bool) public operators;
+  modifier onlyOperator() {
+    if (operators[msg.sender]) _;
+  }
 
-    modifier onlyOperator() {
-        if (operators[msg.sender]) _;
+  function setOperator(address _op, bool _status) public onlyOwner returns (bool success) {
+    operators[_op] = _status;
+    return true;
+  }
+
+  function isOperator() public view returns (bool success) {
+    return operators[msg.sender];
+  }
+
+  // blocks
+  struct Block {
+    bytes32 merkleRoot;
+    uint256 timestamp;
+  }
+
+  uint public blockCount;
+  mapping(uint => Block) public blocks;
+
+  event BlockSubmitted(uint indexed blockIndex, address operator, bytes32 indexed merkleRoot);
+
+  function submitBlock(bytes32 _merkleRoot, uint _blockIndex) public onlyOperator {
+    require(blockCount == _blockIndex);
+
+    Block memory newBlock = Block(_merkleRoot, block.timestamp);
+
+    blocks[_blockIndex] = newBlock;
+
+    BlockSubmitted(_blockIndex, msg.sender, _merkleRoot);
+
+    blockCount += 1;
+  }
+
+  // deposits
+  struct Deposit {
+    address depositor;
+    uint amount;
+  }
+
+  mapping(uint => Deposit) public deposits;
+  uint public depositCount;
+
+  event Deposited(uint indexed uid, address depositor, uint amount);
+
+  function deposit(address _currency, uint _amount) payable public {
+    require(_amount > 0);
+
+    if (_currency == address(0)) {
+      require(_amount == msg.value);
+    } else {
+      throw;
     }
 
-    function setOperator(address _op, bool _status) public returns (bool success) {
-        require(msg.sender == owner);
-        operators[_op] = _status;
-        return true;
+    uint uid = depositCount;
+    deposits[uid] = Deposit(msg.sender, _amount);
+
+    Deposited(uid, msg.sender, _amount);
+
+    depositCount += 1;
+  }
+
+  // withdrawals
+  struct ExitTX {
+    address exitor;
+    uint timestamp;
+  }
+
+  uint challengeTimeout;
+
+  PriorityQueue exitsQueue;
+  mapping(uint => ExitTX) public exits;
+
+  event WithdrawDeposit(address depositor, uint indexed uid, uint256 indexed timestamp, uint amount);
+  event ExitStarted(uint indexed priority);
+
+  function withdrawDeposit(uint _uid) public {
+    require(deposits[_uid].depositor == msg.sender); // check if the deposit exists and the owner matches
+
+    ExitTX memory exitTX = ExitTX(msg.sender, block.timestamp + challengeTimeout);
+    addExitToQueue(_uid, exitTX);
+
+    WithdrawDeposit(msg.sender, _uid, block.timestamp, deposits[_uid].amount);
+  }
+
+  function addExitToQueue(uint _uid, ExitTX memory exitTX) private {
+    require(exits[_uid].timestamp == 0); // check if correspondent withdrawal has been already requested
+
+    uint priority = exitTX.timestamp << 128 | _uid;
+    exitsQueue.insert(priority);
+    exits[_uid] = exitTX;
+
+    ExitStarted(priority);
+  }
+
+  function getNextExit() public view returns (uint uid, uint timestamp) {
+    uint256 priority = exitsQueue.getMin();
+    uid = uint256(uint128(priority));
+    timestamp = priority >> 128;
+  }
+
+  event FinalizedExit(address depositor, uint amount, uint indexed uid, uint256 indexed timestamp);
+
+  function finalizeExits() public returns (uint processed) {
+    uint uid;
+    uint exitTimestamp;
+
+    uint timestamp = block.timestamp;
+
+    (uid, exitTimestamp) = getNextExit();
+    while (exitTimestamp < timestamp) {
+      ExitTX memory exitTX = exits[uid];
+
+      if (exitTX.exitor != 0x0) {
+        // nobody has challenged the exit
+        uint amount = deposits[uid].amount;
+        exitTX.exitor.transfer(amount);
+
+        FinalizedExit(exitTX.exitor, amount, uid, timestamp);
+
+        delete exits[uid];
+        delete deposits[uid];
+      }
+
+      exitsQueue.delMin();
+      processed += 1;
+
+      if (exitsQueue.currentSize() > 0) {
+        (uid, exitTimestamp) = getNextExit();
+      } else {
+        return;
+      }
     }
+  }
 
-    function isOperator() public view returns (bool success) {
-        return operators[msg.sender];
-    }
+  event DepositWithdrawChallenged(address challenger, address depositor, uint indexed uid, uint blockIndex);
 
-    uint public currentBlkNum;
+  // challenge
+  function challengeWithdrawDeposit(uint _blockIndex, bytes _transactionBytes, bytes _proof, bytes signature) public returns (bool success) {
+    Block memory block = blocks[_blockIndex];
+    Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
 
-    event BlockSubmitted(address _operator, uint256 indexed _totalCount, bytes32 indexed _hash);
+    require(deposits[transaction.uid].amount > 0); // check if the deposit exists
 
-    mapping(uint => bytes32) public childChain;
+    //require(exits[transaction.uid].timestamp >= block.timestamp); // check if challenge timeout is off
 
-    function Plasma() public
-    {
-        depositCount = 0;
-        currentBlkNum = 0;
-    }
+    bytes32 hash = Transaction.hashTransaction(transaction);
 
-    function submitBlock(bytes32 _blkRoot, uint _blknum) public onlyOperator
-    {
-        require(currentBlkNum + 1 == _blknum);
-        childChain[_blknum] = _blkRoot;
-        currentBlkNum += 1;
+    require(MerkleProof.verifyProof(_proof, block.merkleRoot, hash, transaction.uid)); // check is TX exists
 
-        BlockSubmitted(msg.sender, currentBlkNum, _blkRoot);
-    }
+    address exitor = exits[transaction.uid].exitor;
 
-    uint public depositCount;
-    mapping(bytes32 => uint) public wallet;
+    require(Transaction.checkSig(exitor, hash, signature)); // check if the correspondent signature correct
 
-    uint constant ETH_RATIO = 10**18;
+    require(exitor != transaction.newOwner); // check if the owner has been changed
 
-    event Deposit(address _depositor, uint256 indexed _amount, uint256 indexed _uid);
+    delete exits[transaction.uid]; // delete exit
+    // TODO: prevent further challengeWithdrawDeposit calls with the same UID
 
-    function deposit(address _currency, uint _amount) payable public
-    {
-        if (_currency == address(0)) {
-            require(_amount * ETH_RATIO == msg.value);
-        }
-        bytes32 uid = keccak256(_currency, msg.sender, depositCount);
-        wallet[uid] = _amount;
-        depositCount += 1;
+    DepositWithdrawChallenged(msg.sender, exitor, transaction.uid, _blockIndex);
 
-        Deposit(msg.sender, _amount, uint256(uid));
-    }
+    return true;
+  }
 
-    function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public constant returns (bool success)
-    {
-        return MerkleProof.verifyProof(_proof, _root, _leaf, _index);
-    }
+  // temp methods
+  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public constant returns (bool success) {
+    return MerkleProof.verifyProof(_proof, _root, _leaf, _index);
+  }
+
+  function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public constant returns (bool success) {
+    Block memory block = blocks[_blockIndex];
+    Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
+    bytes32 hash = Transaction.hashTransaction(transaction);
+
+    return MerkleProof.verifyProof(_proof, block.merkleRoot, hash, transaction.uid);
+  }
+
+  function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public constant returns (bool success) {
+    Block memory block = blocks[_blockIndex];
+
+    return MerkleProof.verifyProof(_proof, block.merkleRoot, 0x0, _uid);
+  }
+
+  function() public payable {
+    deposit(0x0, msg.value);
+  }
+
+  function Plasma(uint _challengeTimeout) public {
+    depositCount = 0;
+    blockCount = 0;
+    exitsQueue = new PriorityQueue();
+
+    challengeTimeout = _challengeTimeout;
+  }
 }

@@ -1,4 +1,4 @@
-const Migrations = artifacts.require('./Migrations.sol');
+const Migrations = artifacts.require('./PriorityQueue.sol');
 
 module.exports = (deployer) => {
   deployer.deploy(Migrations);

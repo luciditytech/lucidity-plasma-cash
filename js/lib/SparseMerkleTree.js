@@ -1,25 +1,36 @@
 const { sha3, sha256, bufferToHex } = require('ethereumjs-util');
+const BigNumber = require('bignumber.js');
 
 const hash = sha3;
 
 class SparseMerkleTree {
   constructor(input, depth) {
     this.depth = depth || 256;
-
+    const len = Object.keys(input).length;
     const max = Math.pow(2, this.depth - 1);
-    //throw new Error('Array is not an array of buffers');
-    if (Object.keys(input).length > max) {
+    if (len > max) {
       throw new Error('There are too many leaves for the tree to build');
     }
-    for (let idx in input) {
-      if (idx < 0 || idx >= max) {
-        throw new Error('Invalid index')
+
+    // convert indices to HEX strings
+    const hexInput = {};
+    for (let index in input) {
+      if (index < 0) {
+        throw new Error('Cannot parse negative indices')
       }
+      try {
+        hexInput[add(index, 0)] = input[index];
+      } catch (err) {
+        throw new Error('Cannot parse an index: ' + index)
+      }
+
+      // TODO: check if indexes within [0, max)
     }
 
     this.defaultNodes = SparseMerkleTree.getDefaultNodes(this.depth);
-    if (Object.keys(input).length > 0) {
-      this.tree = this.createTree(input, this.depth);
+
+    if (len > 0) {
+      this.tree = this.createTree(hexInput, this.depth);
       this.root = Object.values(this.tree.slice(-1)[0]).slice(-1)[0];
     } else {
       this.tree = [];
@@ -28,10 +39,11 @@ class SparseMerkleTree {
   }
 
   getProofForIndex(idx) {
+    idx = add(idx, 0);
     const proof = [];
     for (let level = 0; level < (this.depth - 1); ++level) {
-      const siblingIndex = idx % 2 === 0 ? idx + 1 : idx - 1;
-      idx = Math.floor(idx / 2);
+      const siblingIndex = isEven(idx) ? add(idx, 1) : add(idx, -1);
+      idx = div2(idx);
       if (siblingIndex in this.tree[level]) {
         proof.push(this.tree[level][siblingIndex]);
       } else {
@@ -56,15 +68,16 @@ class SparseMerkleTree {
   }
 
   verifyProof(proof, root, leaf, idx) {
+    idx = add(idx, 0);
     let computedHash = leaf;
-    proof.forEach(function (proofElement) {
-      if (idx % 2 === 0) {
+    proof.forEach(proofElement => {
+      if (isEven(idx)) {
         computedHash = hash(Buffer.concat([computedHash, proofElement]));
       } else {
         computedHash = hash(Buffer.concat([proofElement, computedHash]));
       }
-      idx = Math.floor(idx / 2);
-    }, this);
+      idx = div2(idx);
+    });
 
     return Buffer.compare(computedHash, root) === 0;
   }
@@ -79,16 +92,15 @@ class SparseMerkleTree {
 
       Object.keys(treeLevel)
         .sort()
-        .forEach(function(index) {
-          index = parseInt(index);
+        .forEach(index => {
           const value = treeLevel[index];
-          if (index % 2 === 0) {
-            nextLevel[Math.floor(index / 2)] = hash(Buffer.concat([value, this.defaultNodes[level]]));
+          if (isEven(index)) {
+            nextLevel[div2(index)] = hash(Buffer.concat([value, this.defaultNodes[level]]));
           } else {
-            if (index === (prevIndex + 1)) {
-              nextLevel[Math.floor(index / 2)] = hash(Buffer.concat([treeLevel[prevIndex], value]));
+            if (index === add(prevIndex, 1)) {
+              nextLevel[div2(index)] = hash(Buffer.concat([treeLevel[prevIndex], value]));
             } else {
-              nextLevel[Math.floor(index / 2)] = hash(Buffer.concat([this.defaultNodes[level], value]));
+              nextLevel[div2(index)] = hash(Buffer.concat([this.defaultNodes[level], value]));
             }
           }
           prevIndex = index;
@@ -102,7 +114,6 @@ class SparseMerkleTree {
     if (arr.some(el => !Buffer.isBuffer(el))) {
       throw new Error('Array is not an array of buffers');
     }
-
     return `0x${arr.map(el => el.toString('hex')).join('')}`;
   }
 
@@ -110,10 +121,27 @@ class SparseMerkleTree {
     const res = [Buffer.alloc(32)];
     for (let level = 1; level < depth; ++level) {
       const prev = res[level - 1];
-      res.push(hash(Buffer.concat([prev, prev])))
+      res.push(hash(Buffer.concat([prev, prev])));
     }
-    return res
+    return res;
   }
+}
+
+function div2(num) {
+  const bigNumber = BigNumber(num);
+  return '0x' + bigNumber.dividedToIntegerBy(2).toString(16);
+}
+
+function add(num, val) {
+  const bigNumber = BigNumber(num);
+  return '0x' + bigNumber.plus(val).toString(16);
+}
+
+function isEven(num) {
+  const bigNumber = BigNumber(num);
+  const div = '0x' + bigNumber.dividedToIntegerBy(2).toString(16);
+  const mul = '0x' + BigNumber(div).multipliedBy(2).toString(16);
+  return mul === num;
 }
 
 module.exports = SparseMerkleTree;

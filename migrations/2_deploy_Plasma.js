@@ -5,5 +5,5 @@ module.exports = (deployer) => {
   deployer.deploy(MerkleProof);
 
   deployer.link(MerkleProof, Plasma);
-  deployer.deploy(Plasma);
+  deployer.deploy(Plasma, 60);
 };

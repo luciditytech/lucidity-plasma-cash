@@ -15,19 +15,18 @@ library Transaction {
         address newOwner;
     }
 
-    function createTransaction(bytes rlp) internal constant returns (
-        TX memory) {
+    function createTransaction(bytes rlp) internal constant returns (TX memory) {
         RLP.RLPItem[] memory txList = rlp.toRLPItem().toList();
         require(txList.length == 3);
         return TX({
-            uid: txList[1].toUint(),
-            prevBlock: txList[2].toUint(),
-            newOwner: txList[3].toAddress()
+            uid: txList[0].toUint(),
+            prevBlock: txList[1].toUint(),
+            newOwner: txList[2].toAddress()
         });
     }
 
-    function checkSig(bytes32 txHash, bytes sig) internal view returns (bool) {
-        return msg.sender == ECRecovery.recover(txHash, sig);
+    function checkSig(address signer, bytes32 txHash, bytes sig) internal view returns (bool) {
+        return signer == ECRecovery.recover(txHash, sig);
     }
 
     function hashTransaction(TX memory _transaction) internal returns (bytes32) {
