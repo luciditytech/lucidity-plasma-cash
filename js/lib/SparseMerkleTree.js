@@ -1,31 +1,49 @@
-const { sha3, sha256, bufferToHex } = require('ethereumjs-util');
+const { sha3, bufferToHex } = require('ethereumjs-util');
 const BigNumber = require('bignumber.js');
 
 const hash = sha3;
+
+
+function div2(num) {
+  const bigNumber = BigNumber(num);
+  return `0x${bigNumber.dividedToIntegerBy(2).toString(16)}`;
+}
+
+function add(num, val) {
+  const bigNumber = BigNumber(num);
+  return `0x${bigNumber.plus(val).toString(16)}`;
+}
+
+function isEven(num) {
+  const bigNumber = BigNumber(num);
+  const div = `0x${bigNumber.dividedToIntegerBy(2).toString(16)}`;
+  const mul = `0x${BigNumber(div).multipliedBy(2).toString(16)}`;
+  return mul === num;
+}
 
 class SparseMerkleTree {
   constructor(input, depth) {
     this.depth = depth || 256;
     const len = Object.keys(input).length;
-    const max = Math.pow(2, this.depth - 1);
+    const max = 2 ** (this.depth - 1);
     if (len > max) {
       throw new Error('There are too many leaves for the tree to build');
     }
 
     // convert indices to HEX strings
     const hexInput = {};
-    for (let index in input) {
+    Object.keys(input).forEach((index) => {
       if (index < 0) {
-        throw new Error('Cannot parse negative indices')
+        throw new Error('Cannot parse negative indices');
       }
       try {
         hexInput[add(index, 0)] = input[index];
       } catch (err) {
-        throw new Error('Cannot parse an index: ' + index)
+        throw new Error(`Cannot parse an index: ${index}`);
       }
 
       // TODO: check if indexes within [0, max)
-    }
+    });
 
     this.defaultNodes = SparseMerkleTree.getDefaultNodes(this.depth);
 
@@ -38,10 +56,10 @@ class SparseMerkleTree {
     }
   }
 
-  getProofForIndex(idx) {
-    idx = add(idx, 0);
+  getProofForIndex(index) {
+    let idx = add(index, 0);
     const proof = [];
-    for (let level = 0; level < (this.depth - 1); ++level) {
+    for (let level = 0; level < (this.depth - 1); level += 1) {
       const siblingIndex = isEven(idx) ? add(idx, 1) : add(idx, -1);
       idx = div2(idx);
       if (siblingIndex in this.tree[level]) {
@@ -67,10 +85,10 @@ class SparseMerkleTree {
     return bufferToHex(this.getRoot());
   }
 
-  verifyProof(proof, root, leaf, idx) {
-    idx = add(idx, 0);
+  static verifyProof(proof, root, leaf, index) {
+    let idx = add(index, 0);
     let computedHash = leaf;
-    proof.forEach(proofElement => {
+    proof.forEach((proofElement) => {
       if (isEven(idx)) {
         computedHash = hash(Buffer.concat([computedHash, proofElement]));
       } else {
@@ -82,29 +100,33 @@ class SparseMerkleTree {
     return Buffer.compare(computedHash, root) === 0;
   }
 
+  createNextLevel(level, treeLevel) {
+    const nextLevel = {};
+    let prevIndex = -1;
+
+    Object.keys(treeLevel)
+      .sort()
+      .forEach((index) => {
+        const value = treeLevel[index];
+        if (isEven(index)) {
+          nextLevel[div2(index)] = hash(Buffer.concat([value, this.defaultNodes[level]]));
+        } else if (index === add(prevIndex, 1)) {
+          nextLevel[div2(index)] = hash(Buffer.concat([treeLevel[prevIndex], value]));
+        } else {
+          nextLevel[div2(index)] = hash(Buffer.concat([this.defaultNodes[level], value]));
+        }
+        prevIndex = index;
+      }, this);
+
+    return nextLevel;
+  }
+
   createTree(input, depth) {
     const tree = [input];
     let treeLevel = input;
 
-    for (let level = 0; level < (depth - 1); ++level) {
-      const nextLevel = {};
-      let prevIndex = -1;
-
-      Object.keys(treeLevel)
-        .sort()
-        .forEach(index => {
-          const value = treeLevel[index];
-          if (isEven(index)) {
-            nextLevel[div2(index)] = hash(Buffer.concat([value, this.defaultNodes[level]]));
-          } else {
-            if (index === add(prevIndex, 1)) {
-              nextLevel[div2(index)] = hash(Buffer.concat([treeLevel[prevIndex], value]));
-            } else {
-              nextLevel[div2(index)] = hash(Buffer.concat([this.defaultNodes[level], value]));
-            }
-          }
-          prevIndex = index;
-        }, this);
+    for (let level = 0; level < (depth - 1); level += 1) {
+      const nextLevel = this.createNextLevel(level, treeLevel);
       tree.push(treeLevel = nextLevel);
     }
     return tree;
@@ -119,7 +141,7 @@ class SparseMerkleTree {
 
   static getDefaultNodes(depth) {
     const res = [Buffer.alloc(32)];
-    for (let level = 1; level < depth; ++level) {
+    for (let level = 1; level < depth; level += 1) {
       const prev = res[level - 1];
       res.push(hash(Buffer.concat([prev, prev])));
     }
@@ -127,21 +149,5 @@ class SparseMerkleTree {
   }
 }
 
-function div2(num) {
-  const bigNumber = BigNumber(num);
-  return '0x' + bigNumber.dividedToIntegerBy(2).toString(16);
-}
-
-function add(num, val) {
-  const bigNumber = BigNumber(num);
-  return '0x' + bigNumber.plus(val).toString(16);
-}
-
-function isEven(num) {
-  const bigNumber = BigNumber(num);
-  const div = '0x' + bigNumber.dividedToIntegerBy(2).toString(16);
-  const mul = '0x' + BigNumber(div).multipliedBy(2).toString(16);
-  return mul === num;
-}
 
 module.exports = SparseMerkleTree;

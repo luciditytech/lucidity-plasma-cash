@@ -1,8 +1,8 @@
-pragma solidity 0.4.19;
+pragma solidity 0.4.24;
 
-import 'zeppelin-solidity/contracts/ownership/Ownable.sol';
-import 'zeppelin-solidity/contracts/math/SafeMath.sol';
-import 'zeppelin-solidity/contracts/math/Math.sol';
+import 'openzeppelin-solidity/contracts/ownership/Ownable.sol';
+import 'openzeppelin-solidity/contracts/math/SafeMath.sol';
+import 'openzeppelin-solidity/contracts/math/Math.sol';
 import './lib/MerkleProof.sol';
 import './lib/PriorityQueue.sol';
 import './Transaction.sol';
