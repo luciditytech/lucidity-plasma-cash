@@ -1,7 +1,7 @@
-pragma solidity ^0.4.24;
+pragma solidity ^0.4.0;
 
-import "openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
+import 'zeppelin-solidity/contracts/math/SafeMath.sol';
+import 'zeppelin-solidity/contracts/ownership/Ownable.sol';
 
 /**
  * @title PriorityQueue
@@ -16,7 +16,7 @@ contract PriorityQueue is Ownable {
   uint256[] heapList;
   uint256 public currentSize;
 
-  constructor()
+  function PriorityQueue()
   public
   {
     heapList = [0];

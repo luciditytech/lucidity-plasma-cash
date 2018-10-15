@@ -3,13 +3,6 @@ const ethjsUtil = require('ethereumjs-util');
 
 const RLP = require('rlp');
 
-
-function toPaddedHexString(number, len) {
-  const num = number.substring(2);
-  return `0x${'0'.repeat(len * 2 - num.length) + num}`;
-}
-
-
 class Transaction {
   constructor(uid, prevBlock, newOwner) {
     Object.defineProperty(this, 'uid', {
@@ -51,13 +44,13 @@ class Transaction {
     return [
       { type: 'uint', value: this.uid },
       { type: 'uint', value: this.prevBlock },
-      { type: 'address', value: this.newOwner },
+      { type: 'address', value: this.newOwner }
     ];
   }
 
   sign(privKey) {
-    const { v, r, s } = ethjsUtil.ecsign(Buffer.from(this.tidHex().substring(2), 'hex'), privKey);
-    return Buffer.from(ethjsUtil.toRpcSig(v, r, s).substring(2), 'hex');
+    const { v, r, s } = ethjsUtil.ecsign(new Buffer(this.tidHex().substring(2), 'hex'), privKey);
+    return new Buffer(ethjsUtil.toRpcSig(v, r, s).substring(2), 'hex');
   }
 
   signHex(privKey) {
@@ -69,10 +62,16 @@ class Transaction {
     const pubKey = ethjsUtil.ecrecover(this.tid(),
       v,
       r,
-      s);
+      s
+    );
 
     return address === ethjsUtil.bufferToHex(ethjsUtil.pubToAddress(pubKey));
   }
+}
+
+function toPaddedHexString(num, len) {
+  num = num.substring(2);
+  return `0x${'0'.repeat(len * 2 - num.length) + num}`;
 }
 
 module.exports = Transaction;

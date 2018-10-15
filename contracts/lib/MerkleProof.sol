@@ -1,4 +1,4 @@
-pragma solidity ^0.4.24;
+pragma solidity ^0.4.18;
 
 /*
  * @title MerkleProof
@@ -32,10 +32,10 @@ library MerkleProof {
 
       if (_index % 2 == 0) {
         // Hash(current computed hash + current element of the proof)
-        computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
+        computedHash = keccak256(computedHash, proofElement);
       } else {
         // Hash(current element of the proof + current computed hash)
-        computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
+        computedHash = keccak256(proofElement, computedHash);
       }
       _index = _index / 2;
     }
