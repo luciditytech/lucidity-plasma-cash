@@ -1,5 +1,5 @@
 {
-  "name": "plasma-cash",
+  "name": "lucidity-plasma-cash",
   "version": "1.0.0",
   "description": "",
   "main": "truffle.js",
@@ -11,7 +11,7 @@
     "test": "scripts/test.sh",
     "coverage": "./node_modules/.bin/solidity-coverage",
     "lint:solium": "solium --dir .",
-    "lint:js": "./node_modules/.bin/eslint . --no-ignore --ext .js --fix",
+    "lint:js": "eslint . --no-ignore --ext .js --fix",
     "lint": "npm run lint:js && npm run lint:solium"
   },
   "eslintIgnore": [

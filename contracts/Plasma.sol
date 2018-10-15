@@ -1,11 +1,11 @@
 pragma solidity 0.4.24;
 
-import 'openzeppelin-solidity/contracts/ownership/Ownable.sol';
-import 'openzeppelin-solidity/contracts/math/SafeMath.sol';
-import 'openzeppelin-solidity/contracts/math/Math.sol';
-import './lib/MerkleProof.sol';
-import './lib/PriorityQueue.sol';
-import './Transaction.sol';
+import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity/contracts/math/Math.sol";
+import "./lib/MerkleProof.sol";
+import "./lib/PriorityQueue.sol";
+import "./Transaction.sol";
 
 import "./lib/RLP.sol";
 
@@ -37,13 +37,13 @@ contract Plasma is Ownable {
   event BlockSubmitted(uint indexed blockIndex, address operator, bytes32 indexed merkleRoot);
 
   function submitBlock(bytes32 _merkleRoot, uint _blockIndex) public onlyOperator {
-    require(blockCount == _blockIndex);
+    require(blockCount == _blockIndex, "blockCount == _blockIndex");
 
     Block memory newBlock = Block(_merkleRoot, block.timestamp);
 
     blocks[_blockIndex] = newBlock;
 
-    BlockSubmitted(_blockIndex, msg.sender, _merkleRoot);
+    emit BlockSubmitted(_blockIndex, msg.sender, _merkleRoot);
 
     blockCount += 1;
   }
@@ -59,19 +59,19 @@ contract Plasma is Ownable {
 
   event Deposited(uint indexed uid, address depositor, uint amount);
 
-  function deposit(address _currency, uint _amount) payable public {
-    require(_amount > 0);
+  function deposit(address _currency, uint _amount) public payable {
+    require(_amount > 0, "_amount > 0");
 
     if (_currency == address(0)) {
-      require(_amount == msg.value);
+      require(_amount == msg.value, "_amount == msg.value");
     } else {
-      throw;
+      revert("_currency != address(0)");
     }
 
     uint uid = depositCount;
     deposits[uid] = Deposit(msg.sender, _amount);
 
-    Deposited(uid, msg.sender, _amount);
+    emit Deposited(uid, msg.sender, _amount);
 
     depositCount += 1;
   }
@@ -91,22 +91,24 @@ contract Plasma is Ownable {
   event ExitStarted(uint indexed priority);
 
   function withdrawDeposit(uint _uid) public {
-    require(deposits[_uid].depositor == msg.sender); // check if the deposit exists and the owner matches
+    // check if the deposit exists and the owner matches
+    require(deposits[_uid].depositor == msg.sender, "deposits[_uid].depositor == msg.sender");
 
     ExitTX memory exitTX = ExitTX(msg.sender, block.timestamp + challengeTimeout);
     addExitToQueue(_uid, exitTX);
 
-    WithdrawDeposit(msg.sender, _uid, block.timestamp, deposits[_uid].amount);
+    emit WithdrawDeposit(msg.sender, _uid, block.timestamp, deposits[_uid].amount);
   }
 
   function addExitToQueue(uint _uid, ExitTX memory exitTX) private {
-    require(exits[_uid].timestamp == 0); // check if correspondent withdrawal has been already requested
+    // check if correspondent withdrawal has been already requested
+    require(exits[_uid].timestamp == 0, "exits[_uid].timestamp == 0");
 
     uint priority = exitTX.timestamp << 128 | _uid;
     exitsQueue.insert(priority);
     exits[_uid] = exitTX;
 
-    ExitStarted(priority);
+    emit ExitStarted(priority);
   }
 
   function getNextExit() public view returns (uint uid, uint timestamp) {
@@ -132,7 +134,7 @@ contract Plasma is Ownable {
         uint amount = deposits[uid].amount;
         exitTX.exitor.transfer(amount);
 
-        FinalizedExit(exitTX.exitor, amount, uid, timestamp);
+        emit FinalizedExit(exitTX.exitor, amount, uid, timestamp);
 
         delete exits[uid];
         delete deposits[uid];
@@ -153,55 +155,57 @@ contract Plasma is Ownable {
 
   // challenge
   function challengeWithdrawDeposit(uint _blockIndex, bytes _transactionBytes, bytes _proof, bytes signature) public returns (bool success) {
-    Block memory block = blocks[_blockIndex];
+    Block memory plasmaBlock = blocks[_blockIndex];
     Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
 
-    require(deposits[transaction.uid].amount > 0); // check if the deposit exists
+    require(deposits[transaction.uid].amount > 0, "deposits[transaction.uid].amount > 0"); // check if the deposit exists
 
     //require(exits[transaction.uid].timestamp >= block.timestamp); // check if challenge timeout is off
 
     bytes32 hash = Transaction.hashTransaction(transaction);
 
-    require(MerkleProof.verifyProof(_proof, block.merkleRoot, hash, transaction.uid)); // check is TX exists
+    // check is TX exists
+    require(MerkleProof.verifyProof(_proof, plasmaBlock.merkleRoot, hash, transaction.uid), "MerkleProof.verifyProof(...)");
 
     address exitor = exits[transaction.uid].exitor;
 
-    require(Transaction.checkSig(exitor, hash, signature)); // check if the correspondent signature correct
+    // check if the correspondent signature correct
+    require(Transaction.checkSig(exitor, hash, signature), "Transaction.checkSig(exitor, hash, signature)");
 
-    require(exitor != transaction.newOwner); // check if the owner has been changed
+    require(exitor != transaction.newOwner, "exitor != transaction.newOwner"); // check if the owner has been changed
 
     delete exits[transaction.uid]; // delete exit
     // TODO: prevent further challengeWithdrawDeposit calls with the same UID
 
-    DepositWithdrawChallenged(msg.sender, exitor, transaction.uid, _blockIndex);
+    emit DepositWithdrawChallenged(msg.sender, exitor, transaction.uid, _blockIndex);
 
     return true;
   }
 
   // temp methods
-  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public constant returns (bool success) {
+  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public pure returns (bool success) {
     return MerkleProof.verifyProof(_proof, _root, _leaf, _index);
   }
 
-  function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public constant returns (bool success) {
-    Block memory block = blocks[_blockIndex];
+  function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public view returns (bool success) {
+    Block memory plasmaBlock = blocks[_blockIndex];
     Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
     bytes32 hash = Transaction.hashTransaction(transaction);
 
-    return MerkleProof.verifyProof(_proof, block.merkleRoot, hash, transaction.uid);
+    return MerkleProof.verifyProof(_proof, plasmaBlock.merkleRoot, hash, transaction.uid);
   }
 
-  function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public constant returns (bool success) {
-    Block memory block = blocks[_blockIndex];
+  function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public view returns (bool success) {
+    Block memory plasmaBlock = blocks[_blockIndex];
 
-    return MerkleProof.verifyProof(_proof, block.merkleRoot, 0x0, _uid);
+    return MerkleProof.verifyProof(_proof, plasmaBlock.merkleRoot, 0x0, _uid);
   }
 
   function() public payable {
     deposit(0x0, msg.value);
   }
 
-  function Plasma(uint _challengeTimeout) public {
+  constructor(uint _challengeTimeout) public {
     depositCount = 0;
     blockCount = 0;
     exitsQueue = new PriorityQueue();
