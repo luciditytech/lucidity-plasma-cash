@@ -1,4 +1,5 @@
-const expect = require('chai').expect;
+import { expect } from 'chai';
+
 const RLP = require('rlp');
 
 describe('RLP', () => {

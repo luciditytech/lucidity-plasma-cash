@@ -1,9 +1,26 @@
-const expect = require('chai').expect;
+import { expect } from 'chai';
+
 const crypto = require('crypto');
 const secp256k1 = require('secp256k1');
 const ethjsUtil = require('ethereumjs-util');
 
 const Transaction = require('../js/lib/Transaction');
+
+
+function privGen() {
+  const buf = Buffer.alloc(32);
+  let privKey;
+  do {
+    privKey = crypto.randomFillSync(buf);
+  } while (!secp256k1.privateKeyVerify(privKey));
+
+  return privKey;
+}
+
+function privToAddr(privKey) {
+  return ethjsUtil.bufferToHex(ethjsUtil.pubToAddress(ethjsUtil.privateToPublic(privKey)));
+}
+
 
 describe('Transaction', () => {
   it('testSign1', () => {
@@ -25,17 +42,3 @@ describe('Transaction', () => {
     expect(tx2.verify(sign, privToAddr(priv))).to.equal(false);
   });
 });
-
-function privGen() {
-  const buf = Buffer.alloc(32);
-  let privKey;
-  do {
-    privKey = crypto.randomFillSync(buf);
-  } while (!secp256k1.privateKeyVerify(privKey));
-
-  return privKey;
-}
-
-function privToAddr(privKey) {
-  return ethjsUtil.bufferToHex(ethjsUtil.pubToAddress(ethjsUtil.privateToPublic(privKey)));
-}
