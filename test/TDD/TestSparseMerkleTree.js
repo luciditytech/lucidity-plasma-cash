@@ -1,6 +1,5 @@
 import { expect } from 'chai';
-
-const SparseMerkleTree = require('../js/lib/SparseMerkleTree');
+import SparseMerkleTree from '../lib/SparseMerkleTree';
 
 
 describe('SparseMerkleTree', () => {

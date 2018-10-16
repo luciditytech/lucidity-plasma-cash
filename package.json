@@ -1,5 +1,5 @@
 {
-  "name": "lucidity-plasma-cash",
+  "name": "plasma-cash",
   "version": "1.0.0",
   "description": "",
   "main": "truffle.js",
@@ -10,8 +10,8 @@
     "mocha": "./node_modules/.bin/mocha --reporter spec",
     "test": "scripts/test.sh",
     "coverage": "./node_modules/.bin/solidity-coverage",
-    "lint:solium": "solium --dir .",
-    "lint:js": "eslint . --no-ignore --ext .js --fix",
+    "lint:solium": "solium --dir ./contracts",
+    "lint:js": "./node_modules/.bin/eslint ./test --no-ignore --ext .js --fix",
     "lint": "npm run lint:js && npm run lint:solium"
   },
   "eslintIgnore": [
@@ -40,12 +40,14 @@
   "devDependencies": {
     "babel-preset-env": "^1.7.0",
     "bluebird": "^3.5.2",
+    "bignumber.js": "^7.2.1",
     "chai": "^4.1.2",
     "eslint": "^5.5.0",
     "eslint-config-airbnb-base": "^13.1.0",
     "eslint-plugin-import": "^2.14.0",
     "ganache-cli": "^6.1.8",
     "lodash": "^4.17.10",
+    "pify": "^4.0.0",
     "solidity-coverage": "^0.5.11",
     "solium": "^1.1.8",
     "truffle": "^4.1.14",

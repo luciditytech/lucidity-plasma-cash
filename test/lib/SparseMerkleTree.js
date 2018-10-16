@@ -21,7 +21,7 @@ function isEven(num) {
   return mul === num;
 }
 
-class SparseMerkleTree {
+export default class SparseMerkleTree {
   constructor(input, depth) {
     this.depth = depth || 256;
     const len = Object.keys(input).length;
@@ -148,6 +148,3 @@ class SparseMerkleTree {
     return res;
   }
 }
-
-
-module.exports = SparseMerkleTree;

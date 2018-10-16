@@ -1,4 +1,4 @@
-# Lucidity Plasma
+# Lucidity Plasma Cash
 
 Implements a Solidity contract to manage Plasma side-chain on Ethereum.
 
@@ -8,15 +8,18 @@ Implements a Solidity contract to manage Plasma side-chain on Ethereum.
 $ npm install
 ```
 
-
 ## Run test cases:
 
-```
-# start ganache CLI
-$ ./ganache-cli
+* `truffle test` or `npm run test`
+* check for linters errors: `npm run lint`
+* With code coverage: `npm run coverage`
 
-$ truffle test
-```
+### Issues during tests
+
+* `Error: ENOENT: no such file or directory, open './allFiredEvents'`
+
+If you experience above issue during coverage test, then create file 
+`touch ./allFiredEvents` each time before you run test command, it should help.
 
 ## Details
 

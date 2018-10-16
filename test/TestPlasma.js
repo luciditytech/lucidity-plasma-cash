@@ -1,15 +1,21 @@
+import Transaction from './lib/Transaction';
+import SparseMerkleTree from './lib/SparseMerkleTree';
+
 const BigNumber = require('bignumber.js');
 const { sha3 } = require('ethereumjs-util');
 
-const Transaction = require('../js/lib/Transaction');
-const SparseMerkleTree = require('../js/lib/SparseMerkleTree');
+const Web3 = require('web3');
 
-const Plasma = artifacts.require('./Plasma.sol');
+const web3 = new Web3(Web3.currentProvider || 'http://localhost:8545');
 
-// const privKey =
-//  Buffer.from('c87509a1c067bbde78beb793e6fa76530b6382a4c0241e5e4a9ec0a0f44dc0d3', 'hex');
+const Plasma = artifacts.require('./PlasmaCash.sol');
 
-contract('Plasma', async ([owner]) => {
+// const privKey
+//  = Buffer.from('c87509a1c067bbde78beb793e6fa76530b6382a4c0241e5e4a9ec0a0f44dc0d3', 'hex');
+
+contract('Plasma', async (accounts) => {
+  const [owner] = accounts;
+
   it('check balance', async () => {
     assert.isTrue((await web3.eth.getBalance(owner) > 1.0));
   });
@@ -28,7 +34,7 @@ contract('Plasma', async ([owner]) => {
   });
 
   it('is operator', async () => {
-    assert.isTrue(await plasma.isOperator());
+    assert.isTrue(await plasma.operators.call(owner));
   });
 
   it('test merkle proof', async () => {
@@ -52,9 +58,9 @@ contract('Plasma', async ([owner]) => {
       value: amount,
     }));
 
-    const depositEvent = depositRes.logs.find(x => x.event === 'Deposited');
+    const depositEvent = depositRes.logs.find(x => x.event === 'LogDeposit');
 
-    depositTransaction1 = new Transaction(`0x${depositEvent.args.uid.toString(16)}`, 0, depositEvent.args.depositor);
+    depositTransaction1 = new Transaction(owner, `0x${depositEvent.args.uid.toString(16)}`, 0, depositEvent.args.depositor);
 
     assert.equal(depositEvent.args.amount, amount);
   });
@@ -67,45 +73,45 @@ contract('Plasma', async ([owner]) => {
       value: amount,
     }));
 
-    const depositEvent = depositRes.logs.find(x => x.event === 'Deposited');
+    const depositEvent = depositRes.logs.find(x => x.event === 'LogDeposit');
 
-    depositTransaction2 = new Transaction(`0x${depositEvent.args.uid.toString(16)}`, 0, depositEvent.args.depositor);
+    depositTransaction2 = new Transaction(owner, `0x${depositEvent.args.uid.toString(16)}`, 0, depositEvent.args.depositor);
 
     assert.equal(depositEvent.args.amount, amount);
   });
 
   let depositTransaction3;
   it('deposit 3', async () => {
-    const amount = 1000000;
+    const amount = '1000000';
 
     const depositRes = (await plasma.deposit('0x0', amount, {
       value: amount,
     }));
 
-    const depositEvent = depositRes.logs.find(x => x.event === 'Deposited');
+    const depositEvent = depositRes.logs.find(x => x.event === 'LogDeposit');
 
-    depositTransaction3 = new Transaction(`0x${depositEvent.args.uid.toString(16)}`, 0, depositEvent.args.depositor);
+    depositTransaction3 = new Transaction(owner, `0x${depositEvent.args.uid.toString(16)}`, 0, depositEvent.args.depositor);
 
     assert.equal(depositEvent.args.amount, amount);
   });
 
   it('submit block', async () => {
     const txs = {};
-    txs[depositTransaction1.getUID()] = depositTransaction1.tid();
-    txs[depositTransaction2.getUID()] = depositTransaction2.tid();
-    txs[depositTransaction3.getUID()] = depositTransaction3.tid();
+    txs[depositTransaction1.getUIDhex()] = depositTransaction1.tid();
+    txs[depositTransaction2.getUIDhex()] = depositTransaction2.tid();
+    txs[depositTransaction3.getUIDhex()] = depositTransaction3.tid();
 
     const merkleTree = new SparseMerkleTree(txs);
 
     const submitRes = (await plasma.submitBlock(merkleTree.getHexRoot(), 0));
 
-    const submitEvent = submitRes.logs.find(x => x.event === 'BlockSubmitted');
+    const submitEvent = submitRes.logs.find(x => x.event === 'LogSubmitBlock');
 
     assert.equal(submitEvent.args.blockIndex, 0);
     assert.equal(submitEvent.args.merkleRoot, merkleTree.getHexRoot());
 
     // prove existence
-    const proof1 = merkleTree.getHexProofForIndex(depositTransaction1.getUID());
+    const proof1 = merkleTree.getHexProofForIndex(depositTransaction1.getUIDhex());
     assert.isTrue(await plasma.proveTX(0, depositTransaction1.toRLPHex(), proof1));
 
     // prove non-existence
@@ -113,53 +119,53 @@ contract('Plasma', async ([owner]) => {
     assert.isTrue(await plasma.proveNoTX(0, 3, proof2));
   });
 
-  it('withdrawDeposit 1', async () => {
-    const withdrawDepositRes = (await plasma.withdrawDeposit(0));
+  it('startDepositExit 1', async () => {
+    const startDepositExitRes = (await plasma.startDepositExit(0));
 
-    const withdrawDepositEvent = withdrawDepositRes.logs.find(x => x.event === 'WithdrawDeposit');
+    const startDepositExitEvent = startDepositExitRes.logs.find(x => x.event === 'LogStartDepositExit');
 
     assert.equal(
-      withdrawDepositEvent.args.uid.toString(16),
-      new BigNumber(depositTransaction1.getUID()).toString(16),
+      startDepositExitEvent.args.uid.toString(16),
+      new BigNumber(depositTransaction1.getUIDhex()).toString(16),
     );
-    assert.equal(withdrawDepositEvent.args.depositor, depositTransaction1.getNewOwner());
+    assert.equal(startDepositExitEvent.args.depositor, depositTransaction1.getNewOwner());
 
-    assert.isDefined(withdrawDepositRes.logs.find(x => x.event === 'ExitStarted').args.priority);
+    assert.isDefined(startDepositExitRes.logs.find(x => x.event === 'ExitStarted').args.priority);
   });
 
-  it('withdrawDeposit 1 failure', async () => {
+  it('startDepositExit 1 failure', async () => {
     try {
-      await plasma.withdrawDeposit(0);
+      await plasma.startDepositExit(0);
       assert.fail();
     } catch (err) {
       assert.isTrue(err.message.includes('VM Exception'));
     }
   });
 
-  it('withdrawDeposit 2', async () => {
-    const withdrawDepositRes = (await plasma.withdrawDeposit(1));
+  it('startDepositExit 2', async () => {
+    const startDepositExitRes = (await plasma.startDepositExit(1));
 
-    const withdrawDepositEvent = withdrawDepositRes.logs.find(x => x.event === 'WithdrawDeposit');
+    const startDepositExitEvent = startDepositExitRes.logs.find(x => x.event === 'LogStartDepositExit');
 
     assert.equal(
-      withdrawDepositEvent.args.uid.toString(16),
-      new BigNumber(depositTransaction2.getUID()).toString(16),
+      startDepositExitEvent.args.uid.toString(16),
+      new BigNumber(depositTransaction2.getUIDhex()).toString(16),
     );
-    assert.equal(withdrawDepositEvent.args.depositor, depositTransaction2.getNewOwner());
+    assert.equal(startDepositExitEvent.args.depositor, depositTransaction2.getNewOwner());
 
-    assert.isDefined(withdrawDepositRes.logs.find(x => x.event === 'ExitStarted').args.priority);
+    assert.isDefined(startDepositExitRes.logs.find(x => x.event === 'ExitStarted').args.priority);
   });
 
   it('next exit', async () => {
     const [uid] = await plasma.getNextExit();
 
-    assert.equal(uid.toString(16), new BigNumber(depositTransaction1.getUID()).toString(16));
+    assert.equal(uid.toString(16), new BigNumber(depositTransaction1.getUIDhex()).toString(16));
   });
 
   it('finalize', async () => {
     const finalizeExitsRes = await plasma.finalizeExits();
 
-    assert.equal(2, finalizeExitsRes.logs.length);
+    assert.equal(4, finalizeExitsRes.logs.length);
   });
 
   it('next exit 3', async () => {
@@ -173,55 +179,57 @@ contract('Plasma', async ([owner]) => {
 
   let changeOwnerTransaction3;
   it('submit block (change ownership)', async () => {
-    changeOwnerTransaction3 = new Transaction(depositTransaction3.getUID(), 0, '0x0');
+    changeOwnerTransaction3 = new Transaction(
+      owner, depositTransaction3.getUIDhex(), 0, accounts[1],
+    );
 
     const txs = {};
-    txs[changeOwnerTransaction3.getUID()] = changeOwnerTransaction3.tid();
+    txs[changeOwnerTransaction3.getUIDhex()] = changeOwnerTransaction3.tid();
 
     const merkleTree = new SparseMerkleTree(txs);
 
     const submitRes = (await plasma.submitBlock(merkleTree.getHexRoot(), 1));
 
-    const submitEvent = submitRes.logs.find(x => x.event === 'BlockSubmitted');
+    const submitEvent = submitRes.logs.find(x => x.event === 'LogSubmitBlock');
 
     assert.equal(submitEvent.args.blockIndex, 1);
     assert.equal(submitEvent.args.merkleRoot, merkleTree.getHexRoot());
   });
 
-  it('withdrawDeposit 3', async () => {
-    const withdrawDepositRes = (await plasma.withdrawDeposit(2));
+  it('startDepositExit 3', async () => {
+    const startDepositExitRes = (await plasma.startDepositExit(2));
 
-    const withdrawDepositEvent = withdrawDepositRes.logs.find(x => x.event === 'WithdrawDeposit');
+    const startDepositExitEvent = startDepositExitRes.logs.find(x => x.event === 'LogStartDepositExit');
 
     assert.equal(
-      withdrawDepositEvent.args.uid.toString(16),
-      new BigNumber(depositTransaction3.getUID()).toString(16),
+      startDepositExitEvent.args.uid.toString(16),
+      new BigNumber(depositTransaction3.getUIDhex()).toString(16),
     );
 
-    assert.isDefined(withdrawDepositRes.logs.find(x => x.event === 'ExitStarted').args.priority);
+    assert.isDefined(startDepositExitRes.logs.find(x => x.event === 'ExitStarted').args.priority);
   });
 
   /* commented out because this test not working, TODO check it in future development
   it('challenge 3', async () => {
     const txs = {};
-    txs[changeOwnerTransaction3.getUID()] = changeOwnerTransaction3.tid();
+    txs[changeOwnerTransaction3.getUIDhex()] = changeOwnerTransaction3.tid();
 
     const merkleTree = new SparseMerkleTree(txs);
-    const proof = merkleTree.getHexProofForIndex(changeOwnerTransaction3.getUID());
+    const proof = merkleTree.getHexProofForIndex(changeOwnerTransaction3.getUIDhex());
 
-    const challengeWithdrawDepositRes = await plasma
-      .challengeWithdrawDeposit(
+    const challengeLogStartDepositExitRes = await plasma
+      .challengeLogStartDepositExit(
         1,
         changeOwnerTransaction3.toRLPHex(),
         proof,
         changeOwnerTransaction3.signHex(privKey),
       );
 
-    const depositWithdrawChallengedEvent =
-      challengeWithdrawDepositRes.logs.find(x => x.event === 'DepositWithdrawChallenged');
+    const LogChallengeDepositExit =
+      challengeLogStartDepositExitRes.logs.find(x => x.event === 'LogChallengeDepositExit');
 
     assert.equal(
-      depositWithdrawChallengedEvent.args.uid.toString(16),
+      LogChallengeDepositExit.args.uid.toString(16),
       new BigNumber(changeOwnerTransaction3.getUID()).toString(16),
     );
   }); // */
@@ -243,18 +251,18 @@ contract('Plasma', async ([owner]) => {
     }
   }); // */
 
-  it('withdrawDeposit 1 failure 2', async () => {
+  it('startDepositExit 1 failure 2', async () => {
     try {
-      await plasma.withdrawDeposit(0);
+      await plasma.startDepositExit(0);
       assert.fail();
     } catch (err) {
       assert.isTrue(err.message.includes('VM Exception'));
     }
   });
 
-  it('withdrawDeposit 3 failure', async () => {
+  it('startDepositExit 3 failure', async () => {
     try {
-      await plasma.withdrawDeposit(0);
+      await plasma.startDepositExit(0);
       assert.fail();
     } catch (err) {
       assert.isTrue(err.message.includes('VM Exception'));
@@ -262,40 +270,41 @@ contract('Plasma', async ([owner]) => {
   });
 
   /* commented out because this test not working, TODO check it in future development
-  it('withdrawDeposit 3', async () => {
-    const withdrawDepositRes = (await plasma.withdrawDeposit(2));
+  it('startDepositExit 3', async () => {
+    const startDepositExitRes = (await plasma.startDepositExit(2));
 
-    const withdrawDepositEvent = withdrawDepositRes.logs.find(x => x.event === 'WithdrawDeposit');
+    const startDepositExitEvent
+      = startDepositExitRes.logs.find(x => x.event === 'LogStartDepositExit');
 
     assert.equal(
-      withdrawDepositEvent.args.uid.toString(16),
-      new BigNumber(depositTransaction3.getUID()).toString(16),
+      startDepositExitEvent.args.uid.toString(16),
+      new BigNumber(depositTransaction3.getUIDhex()).toString(16),
     );
 
-    assert.isDefined(withdrawDepositRes.logs.find(x => x.event === 'ExitStarted').args.priority);
+    assert.isDefined(startDepositExitRes.logs.find(x => x.event === 'ExitStarted').args.priority);
   }); // */
 
   /* commented out because this test not working, TODO check it in future development
   it('challenge 3', async () => {
     const txs = {};
-    txs[changeOwnerTransaction3.getUID()] = changeOwnerTransaction3.tid();
+    txs[changeOwnerTransaction3.getUIDhex()] = changeOwnerTransaction3.tid();
 
     const merkleTree = new SparseMerkleTree(txs);
-    const proof = merkleTree.getHexProofForIndex(changeOwnerTransaction3.getUID());
+    const proof = merkleTree.getHexProofForIndex(changeOwnerTransaction3.getUIDhex());
 
-    const challengeWithdrawDepositRes = await plasma.challengeWithdrawDeposit(
+    const challengeLogStartDepositExitRes = await plasma.challengeLogStartDepositExit(
       1,
       changeOwnerTransaction3.toRLPHex(),
       proof,
       changeOwnerTransaction3.signHex(privKey),
     );
 
-    const depositWithdrawChallengedEvent =
-      challengeWithdrawDepositRes.logs.find(x => x.event === 'DepositWithdrawChallenged');
+    const LogChallengeDepositExit
+      = challengeLogStartDepositExitRes.logs.find(x => x.event === 'LogChallengeDepositExit');
 
     assert.equal(
-      depositWithdrawChallengedEvent.args.uid.toString(16),
-      new BigNumber(changeOwnerTransaction3.getUID()).toString(16),
+      LogChallengeDepositExit.args.uid.toString(16),
+      new BigNumber(changeOwnerTransaction3.getUIDhex()).toString(16),
     );
   }); // */
 
