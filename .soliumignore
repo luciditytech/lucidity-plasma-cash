@@ -3,3 +3,4 @@ helpers
 migrations
 test
 contracts/Migrations.sol
+coverage
