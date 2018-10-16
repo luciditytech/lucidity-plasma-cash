@@ -70,6 +70,8 @@ contract PriorityQueue is Ownable {
     return retVal;
   }
 
+  // TODO: There might be a bug in `PriosityQueue.percUp(uint256 i)`.
+  // I test it for input: 0 1 10 5 6 and I got => 0 1 **6 5** 10
   function percUp(uint256 i)
   private
   {

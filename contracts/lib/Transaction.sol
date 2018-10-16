@@ -1,7 +1,7 @@
 pragma solidity 0.4.24;
 
-import "./lib/RLP.sol";
-import "./lib/ECRecovery.sol";
+import "./RLP.sol";
+import "./ECRecovery.sol";
 
 library Transaction {
   using RLP for bytes;
@@ -15,6 +15,9 @@ library Transaction {
     address newOwner;
   }
 
+  /// @dev this is ETH prefix, so we can be sure, data was signed in EVM
+  bytes constant ETH_PREFIX = "\x19Ethereum Signed Message:\n32";
+
   function createTransaction(bytes rlp) internal pure returns (TX memory) {
     RLP.RLPItem[] memory txList = rlp.toRLPItem().toList();
     require(txList.length == 3, "txList.length == 3");
@@ -26,7 +29,7 @@ library Transaction {
   }
 
   function checkSig(address signer, bytes32 txHash, bytes sig) internal pure returns (bool) {
-    return signer == ECRecovery.recover(txHash, sig);
+    return signer == ECRecovery.recover(keccak256(abi.encodePacked(ETH_PREFIX, txHash)), sig);
   }
 
   function hashTransaction(TX memory _transaction) internal pure returns (bytes32) {
