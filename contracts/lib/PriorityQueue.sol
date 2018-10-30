@@ -1,100 +1,94 @@
 pragma solidity ^0.4.24;
 
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
 
-/**
- * @title PriorityQueue
- * @dev A priority queue implementation
- */
-contract PriorityQueue is Ownable {
+library PriorityQueue {
   using SafeMath for uint256;
 
-  /*
-   *  Storage
-   */
-  uint256[] heapList;
-  uint256 public currentSize;
-
-  constructor()
-  public
-  {
-    heapList = [0];
-    currentSize = 0;
-  }
-
-  function insert(uint256 k)
-  public
-  onlyOwner
-  {
+  function insert(uint256[] storage heapList, uint256 k)
+  public {
     heapList.push(k);
-    currentSize = currentSize.add(1);
-    percUp(currentSize);
-  }
-
-  function minChild(uint256 i)
-  public
-  view
-  returns (uint256)
-  {
-    if (i.mul(2).add(1) > currentSize) {
-      return i.mul(2);
-    } else {
-      if (heapList[i.mul(2)] < heapList[i.mul(2).add(1)]) {
-        return i.mul(2);
-      } else {
-        return i.mul(2).add(1);
-      }
+    if (heapList.length > 1) {
+      percUp(heapList, heapList.length.sub(1));
     }
   }
 
-  function getMin()
+  function getMin(uint256[] storage heapList)
   public
   view
-  returns (uint256)
-  {
-    return heapList[1];
+  returns (uint256) {
+    require(heapList.length > 0, "empty queue");
+    return heapList[0];
   }
 
-  function delMin()
+  function delMin(uint256[] storage heapList)
   public
-  onlyOwner
-  returns (uint256)
-  {
-    uint256 retVal = heapList[1];
-    heapList[1] = heapList[currentSize];
-    delete heapList[currentSize];
-    currentSize = currentSize.sub(1);
-    percDown(1);
+  returns (uint256) {
+    require(heapList.length > 0, "empty queue");
+
+    uint256 min = heapList[0];
+
+    // move the last element to the front
+    heapList[0] = heapList[heapList.length.sub(1)];
+    delete heapList[heapList.length.sub(1)];
     heapList.length = heapList.length.sub(1);
-    return retVal;
+
+    if (heapList.length > 1) {
+      percDown(heapList, 0);
+    }
+
+    return min;
   }
 
-  // TODO: There might be a bug in `PriosityQueue.percUp(uint256 i)`.
-  // I test it for input: 0 1 10 5 6 and I got => 0 1 **6 5** 10
-  function percUp(uint256 i)
+  function minChild(uint256[] storage heapList, uint256 i)
   private
-  {
-    uint256 j = i;
-    uint256 newVal = heapList[i];
-    while (newVal < heapList[i.div(2)]) {
-      heapList[i] = heapList[i.div(2)];
-      i = i.div(2);
-    }
-    if (i != j) heapList[i] = newVal;
+  view
+  returns (uint256) {
+    uint lChild = i.mul(2).add(1);
+    uint rChild = i.mul(2).add(2);
+
+    if (rChild > heapList.length.sub(1) || heapList[lChild] < heapList[rChild])
+      return lChild;
+    else
+      return rChild;
   }
 
-  function percDown(uint256 i)
-  private
-  {
-    uint256 j = i;
-    uint256 newVal = heapList[i];
-    uint256 mc = minChild(i);
-    while (mc <= currentSize && newVal > heapList[mc]) {
-      heapList[i] = heapList[mc];
-      i = mc;
-      mc = minChild(i);
+  function percUp(uint256[] storage heapList, uint256 i)
+  private {
+    uint256 position = i;
+    uint256 value = heapList[i];
+
+    // continue to percolate up while smaller than the parent
+    while (i != 0 && value < heapList[i.sub(1).div(2)]) {
+      heapList[i] = heapList[i.sub(1).div(2)];
+      i = i.sub(1).div(2);
     }
-    if (i != j) heapList[i] = newVal;
+
+    // place the value in the correct parent
+    if (position != i) heapList[i] = value;
+  }
+
+  function percDown(uint256[] storage heapList, uint256 i)
+  private {
+    uint position = i;
+    uint value = heapList[i];
+
+    // continue to percolate down while larger than the child
+    uint child = minChild(heapList, i);
+    while(child < heapList.length && value > heapList[child]) {
+      heapList[i] = heapList[child];
+      i = child;
+      child = minChild(heapList, i);
+    }
+
+    // place value in the correct child
+    if (position != i) heapList[i] = value;
+  }
+
+  function currentSize(uint256[] storage heapList)
+  internal
+  view
+  returns (uint256) {
+    return heapList.length;
   }
 }

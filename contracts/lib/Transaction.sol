@@ -10,8 +10,8 @@ library Transaction {
   using RLP for RLP.Iterator;
 
   struct TX {
-    uint uid;
-    uint prevBlock;
+    uint256 depositId;
+    uint256 prevTxBlockIndex;
     address newOwner;
   }
 
@@ -22,8 +22,8 @@ library Transaction {
     RLP.RLPItem[] memory txList = rlp.toRLPItem().toList();
     require(txList.length == 3, "txList.length == 3");
     return TX({
-      uid: txList[0].toUint(),
-      prevBlock: txList[1].toUint(),
+      depositId: txList[0].toUint(),
+      prevTxBlockIndex: txList[1].toUint(),
       newOwner: txList[2].toAddress()
     });
   }
@@ -32,7 +32,10 @@ library Transaction {
     return signer == ECRecovery.recover(keccak256(abi.encodePacked(ETH_PREFIX, txHash)), sig);
   }
 
-  function hashTransaction(TX memory _transaction) internal pure returns (bytes32) {
-    return keccak256(abi.encodePacked(_transaction.uid, _transaction.prevBlock, _transaction.newOwner));
+  function hashTransaction(TX memory _tx)
+  internal
+  pure
+  returns (bytes32) {
+    return keccak256(abi.encodePacked(_tx.depositId, _tx.prevTxBlockIndex, _tx.newOwner));
   }
 }

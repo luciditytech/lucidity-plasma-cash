@@ -1,7 +1,6 @@
 pragma solidity 0.4.24;
 
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "openzeppelin-solidity/contracts/math/Math.sol";
 
 import "./lib/MerkleProof.sol";
 import "./lib/PriorityQueue.sol";
@@ -15,221 +14,265 @@ import "./Withdrawable.sol";
 
 contract PlasmaCash is Withdrawable, Operable {
 
-  // blocks
+  using PriorityQueue for uint256[];
+  using SafeMath for uint256;
+  using MerkleProof for bytes;
+
   struct Block {
     bytes32 merkleRoot;
     uint256 timestamp;
   }
 
-  struct ExitTX {
+  struct Exit {
     address exitor;
-    uint timestamp;
+    uint256 finalAt;
     bool invalid;
   }
+
   struct Deposit {
-    address depositor;
-    uint amount;
+    address owner;
+    uint256 amount;
   }
 
-  mapping(uint => Deposit) public deposits;
-  uint public depositCount;
+  uint256 public depositId;
+  mapping(uint256 => Deposit) public deposits;
 
-  uint challengeTimeout;
+  /// @dev depositId => blockIndex => Exit
+  mapping(uint256 => mapping(uint256 => Exit)) public exits;
+  /// @dev depositId => exitQueue - every deposit has its own queue
+  mapping(uint256 => uint256[]) public exitQueue;
 
-  PriorityQueue exitsQueue;
-  mapping(uint => ExitTX) public exits;
+  uint256 public exitBond;
 
-  uint public blockCount;
-  mapping(uint => Block) public blocks;
+  uint256 public challengeTimeout;
 
-  event LogSubmitBlock(uint indexed blockIndex, address operator, bytes32 indexed merkleRoot);
-  event LogDeposit(uint indexed uid, address depositor, uint amount);
-  event LogStartDepositExit(address depositor, uint indexed uid, uint256 indexed timestamp, uint amount);
-  event ExitStarted(uint indexed priority);
-  event LogFinalizeExit(address depositor, uint amount, uint indexed uid, uint256 indexed exitTimestamp);
+  uint256 public chainBlockIndex;
+  mapping(uint256 => Block) public blocks;
+
+  event LogDeposit(address indexed depositOwner, uint256 depositId, uint256 depositAmount);
+  event LogSubmitBlock(address indexed operator, uint256 blockIndex, bytes32 indexed merkleRoot);
+
+  event LogStartExit(address indexed executor, uint256 depositId, uint256 blockIndex, uint256 finalizeTime);
+  event LogChallengeExit(address indexed challenger, uint256 depositId, uint256 blockIndex);
+
+  event LogFinalizeExit(address indexed exitor, uint256 amount, uint256 depositId, uint256 blockIndex);
 
 
-  constructor(uint _challengeTimeout) public {
-    depositCount = 0;
-    blockCount = 0;
-    exitsQueue = new PriorityQueue();
+  modifier onlyWithBond() {
+    require(msg.value == exitBond, "exitBond is required");
+    _;
+  }
+
+
+  constructor(uint256 _challengeTimeout, uint256 _exitBond) public {
+    require(_challengeTimeout > 0, "challenge Timeout missing");
+    require(_exitBond > 0, "exit bond missing");
+
+    depositId = 0;
+    // must start with 1, because we using reference to parent block, and parent is 0 (deposit)
+    chainBlockIndex = 1;
 
     challengeTimeout = _challengeTimeout;
+    exitBond = _exitBond;
   }
 
 
-  function deposit(address _currency, uint _amount)
+  function deposit(address _currency, uint256 _amount)
   public
   payable {
-    require(_amount > 0, "_amount > 0");
+    require(_amount > 0, "deposit amount should be > 0");
+    require(msg.sender != address(0), "invalid sender address");
 
     if (_currency == address(0)) {
-      require(_amount == msg.value, "_amount == msg.value");
+      require(_amount == msg.value, "when sending ETH, amount must be equal to value");
     } else {
-      revert("_currency != address(0)");
+      revert("currencies are not supported yet");
     }
 
-    uint uid = depositCount;
-    deposits[uid] = Deposit(msg.sender, _amount);
+    uint256 nonce = depositId;
+    deposits[nonce] = Deposit(msg.sender, _amount);
+    emit LogDeposit(msg.sender, nonce, _amount);
 
-    emit LogDeposit(uid, msg.sender, _amount);
-
-    depositCount += 1;
+    depositId = nonce.add(1);
   }
 
-  function submitBlock(bytes32 _merkleRoot, uint _blockIndex) public onlyOperator {
-    require(blockCount == _blockIndex, "submitBlock: provided _blockIndex is invalid");
+  function submitBlock(bytes32 _merkleRoot, uint256 _blockIndex)
+  public
+  onlyOperator {
+    require(chainBlockIndex == _blockIndex, "blockIndex on side-chain is invalid");
 
     Block memory newBlock = Block(_merkleRoot, block.timestamp);
-
     blocks[_blockIndex] = newBlock;
 
-    emit LogSubmitBlock(_blockIndex, msg.sender, _merkleRoot);
+    emit LogSubmitBlock(msg.sender, _blockIndex, _merkleRoot);
 
-    blockCount += 1;
+    chainBlockIndex = chainBlockIndex.add(1);
   }
 
 
+  function startDepositExit(uint256 _depositId)
+  public
+  onlyWithBond
+  payable {
+    require(exits[_depositId][0].finalAt == 0, "there is already pending deposit exit");
 
-  function startDepositExit(uint _uid) public {
-    // check if the deposit exists and the owner matches
-    require(deposits[_uid].depositor == msg.sender, "deposits[_uid].depositor == msg.sender");
+    Deposit storage depositPtr = deposits[_depositId];
 
-    ExitTX memory exitTX = ExitTX(msg.sender, block.timestamp + challengeTimeout, false);
-    addExitToQueue(_uid, exitTX);
+    require(depositPtr.owner == msg.sender, "invalid deposit owner");
 
-    emit LogStartDepositExit(msg.sender, _uid, block.timestamp, deposits[_uid].amount);
+    uint256 finalAt = createExitAndPriority(_depositId, 0);
+
+    emit LogStartExit(msg.sender, _depositId, 0, finalAt);
   }
 
-  function addExitToQueue(uint _uid, ExitTX memory exitTX) private {
-    // check if correspondent withdrawal has been already requested
-    require(exits[_uid].timestamp == 0, "exits[_uid].timestamp == 0");
+  function startTxExit(bytes _txBytes, bytes _proof, bytes _signature, address _spender, uint256 _targetBlock)
+  public
+  onlyWithBond
+  payable {
 
-    uint priority = exitTX.timestamp << 128 | _uid;
-    exitsQueue.insert(priority);
-    exits[_uid] = exitTX;
+    Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
+    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, _spender, _targetBlock);
 
-    emit ExitStarted(priority);
+    require(exits[transaction.depositId][_targetBlock].finalAt == 0, "exit already exists");
+
+    Deposit storage depositPtr = deposits[transaction.depositId];
+    require(depositPtr.amount > 0, "deposit not exists");
+    require(transaction.newOwner == msg.sender, "you are not the owner");
+
+
+    uint256 finalAt = createExitAndPriority(transaction.depositId, _targetBlock);
+
+    emit LogStartExit(msg.sender, transaction.depositId, _targetBlock, finalAt);
   }
 
-  event LogChallengeDepositExit(address challenger, address depositor, uint indexed uid, uint blockIndex);
 
-  function challengeDepositExit(uint _blockIndex, bytes _transactionBytes, bytes _proof, bytes signature) public returns (bool success) {
-    Block memory challengeBlock = blocks[_blockIndex];
-    Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
+  function createExitAndPriority(uint256 _depositId, uint256 _blockIndex)
+  private
+  returns (uint256 finalAt) {
+    finalAt = block.timestamp.add(challengeTimeout);
+    exits[_depositId][_blockIndex] = Exit(msg.sender, finalAt, false);
 
-    require(deposits[transaction.uid].amount > 0, "deposits[transaction.uid].amount > 0"); // check if the deposit exists
+    exitQueue[_depositId].insert(_blockIndex);
+  }
 
-    //require(exits[transaction.uid].timestamp >= block.timestamp); // check if challenge timeout is off
+
+  function challengeExit(bytes _txBytes, bytes _proof, bytes _signature, uint256 _targetBlock)
+  public {
+
+    Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
+
+    require(deposits[transaction.depositId].amount > 0, "deposit does not exist");
+
+    Exit storage exitPtr = exits[transaction.depositId][transaction.prevTxBlockIndex];
+    require(exitPtr.exitor != address(0), "this exit does not exist");
+    require(!exitPtr.invalid, "exit already challenged");
+    require(exitPtr.exitor != msg.sender, "anti-blocking condition: you can't challenge yourself");
+
+    // we will allow users to challenge exit even after challenge time, until someone finalize it
+    // allow: require(exit.finalAt > block.timestamp, "exit is final, you can't challenge it");
+
+    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, exitPtr.exitor, _targetBlock);
+
+    exitPtr.invalid = true;
+
+    addBalance(msg.sender, exitBond);
+
+    emit LogChallengeExit(msg.sender, transaction.depositId, transaction.prevTxBlockIndex);
+  }
+
+
+  function validateProofSignaturesAndTxData(bytes _txBytes, bytes _proof, bytes _signature, address _signer, uint256 _targetBlock)
+  public
+  view
+  returns (bool) {
+    Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
+    require(transaction.prevTxBlockIndex < chainBlockIndex, "blockchain is the future, but your tx must be from the past");
+    require(_targetBlock > transaction.prevTxBlockIndex, "invalid targetBlock/prevTxBlockIndex");
 
     bytes32 hash = Transaction.hashTransaction(transaction);
 
-    // check is TX exists
-    require(MerkleProof.verifyProof(_proof, challengeBlock.merkleRoot, hash, transaction.uid), "MerkleProof.verifyProof(...)");
-
-    address exitor = exits[transaction.uid].exitor;
-
-    require(exitor != transaction.newOwner, "exitor != transaction.newOwner"); // check if the owner has been changed
-
-    // check if the correspondent signature correct
-    require(Transaction.checkSig(exitor, hash, signature), "Transaction.checkSig(exitor, hash, signature)");
-
-    exits[transaction.uid].invalid = true;
-
-    // TODO: prevent further challengeWithdrawDeposit calls with the same UID
-
-    emit LogChallengeDepositExit(msg.sender, exitor, transaction.uid, _blockIndex);
+    require(transaction.newOwner != _signer, "preventing sending loop");
+    require(_proof.verifyProof(blocks[_targetBlock].merkleRoot, hash, transaction.depositId), "MerkleProof.verifyProof() failed");
+    require(Transaction.checkSig(_signer, hash, _signature), "Transaction.checkSig() failed");
 
     return true;
   }
 
 
-
-  function getNextExit() public view returns (uint uid, uint timestamp) {
-    uint256 priority = exitsQueue.getMin();
-    uid = uint256(uint128(priority));
-    timestamp = priority >> 128;
+  function getNextExit(uint256 _depositId)
+  public
+  view
+  returns (uint256 blockIndex) {
+    if (exitQueue[_depositId].currentSize() == 0) return 0;
+    blockIndex = exitQueue[_depositId].getMin();
   }
 
-  function finalizeExits() public returns (uint processed) {
-    uint uid;
-    uint exitTimestamp;
 
-    uint timestamp = block.timestamp;
+  function finalizeExits(uint256 _depositId)
+  public  {
+    uint256 timestamp = block.timestamp;
 
-    (uid, exitTimestamp) = getNextExit();
+    uint256 blockIndex = getNextExit(_depositId);
+    Exit memory exit = exits[_depositId][blockIndex];
 
-    while (exitTimestamp < timestamp) {
+    while (exit.invalid || (exit.finalAt > 0 && exit.finalAt < timestamp)) {
 
-      ExitTX memory exitTX = exits[uid];
+      if (!exit.invalid) {
+        uint256 amount = deposits[_depositId].amount;
 
-      if (exitTX.invalid) {
-        delete exits[uid];
+        if (amount > 0) {
+
+          uint256 exitAmount = amount.add(exitBond);
+          addBalance(exit.exitor, exitAmount);
+
+          emit LogFinalizeExit(exit.exitor, exitAmount, _depositId, blockIndex);
+
+          delete deposits[_depositId];
+        }
       }
 
-      if (exitTX.exitor != address(0)) {
-        // nobody has challenged the exit
-        uint amount = deposits[uid].amount;
-        addBalance(exitTX.exitor, amount);
+      delete exits[_depositId][blockIndex];
+      exitQueue[_depositId].delMin();
 
-        emit LogFinalizeExit(exitTX.exitor, amount, uid, exitTimestamp);
+      blockIndex = getNextExit(_depositId);
+      exit = exits[_depositId][blockIndex];
 
-        delete exits[uid];
-        delete deposits[uid];
-      }
-
-      exitsQueue.delMin();
-      processed += 1;
-
-      if (exitsQueue.currentSize() > 0) {
-        (uid, exitTimestamp) = getNextExit();
-      } else {
-        return;
-      }
     }
   }
 
 
-  // helpers methods
+  // helpers methods - just for testing, can be removed for release
 
-  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public pure returns (bool success) {
-    return MerkleProof.verifyProof(_proof, _root, _leaf, _index);
+
+  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index)
+  public
+  pure
+  returns (bool) {
+    return _proof.verifyProof(_root, _leaf, _index);
   }
 
-  function proveTX(uint _blockIndex, bytes _transactionBytes, bytes _proof) public view returns (bool success) {
+  function proveTX(uint256 _blockIndex, bytes _transactionBytes, bytes _proof)
+  public
+  view
+  returns (bool) {
     Block memory newBlock = blocks[_blockIndex];
     Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
     bytes32 hash = Transaction.hashTransaction(transaction);
 
-    return MerkleProof.verifyProof(_proof, newBlock.merkleRoot, hash, transaction.uid);
+    return _proof.verifyProof(newBlock.merkleRoot, hash, transaction.depositId);
   }
 
-  function proveNoTX(uint _blockIndex, uint _uid, bytes _proof) public view returns (bool success) {
+  function proveNoTX(uint256 _blockIndex, uint256 _depositId, bytes _proof)
+  public
+  view
+  returns (bool) {
     Block memory newBlock = blocks[_blockIndex];
 
-    return MerkleProof.verifyProof(_proof, newBlock.merkleRoot, 0x0, _uid);
+    return _proof.verifyProof(newBlock.merkleRoot, 0x0, _depositId);
   }
 
-  function() public payable {
-    deposit(0x0, msg.value);
-  }
-
-
-  // TODO remove when no longer needed
-  function helperTestSig(address signer, bytes32 txHash, bytes sig) public returns (bool) {
+  function helperTestSig(address signer, bytes32 txHash, bytes sig) public pure returns (bool) {
     return Transaction.checkSig(signer, txHash, sig);
   }
 
-  // TODO remove when no longer needed
-  function helperTx(address signer, uint _blockIndex, bytes _transactionBytes, bytes sig)
-  public
-  view
-  returns (bytes32 hash) {
-    Transaction.TX memory transaction = Transaction.createTransaction(_transactionBytes);
-
-    hash = Transaction.hashTransaction(transaction);
-
-    require(exits[transaction.uid].exitor == signer, "exitor != signer");
-    require(helperTestSig(exits[transaction.uid].exitor, hash, sig), "testing helperTestSig fail");
-  }
 }
