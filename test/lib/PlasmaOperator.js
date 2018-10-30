@@ -7,6 +7,11 @@ export default class PlasmaOperator extends PlasmaUser {
   constructor(address) {
     super(address);
 
+    Object.defineProperty(this, 'blockIndex', {
+      value: 0,
+      writable: true,
+    });
+
     Object.defineProperty(this, 'poolsMerkleTree', {
       // poolId => tree
       value: [],
@@ -33,13 +38,16 @@ export default class PlasmaOperator extends PlasmaUser {
     this.poolsMerkleTree.push({});
     this.poolsTxObjects.push({});
     this.currentTxsPool = {};
+    this.blockIndex += 1;
 
     if (debug) console.log(`[plasmaOperator] create new pool ${this.getCurrentPoolId()}`);
   }
 
   async submitSingleTx(tx) {
     const { poolId } = await this.addTxToPool(tx);
-    const { blockIndex, merkleRoot } = await this.submitPoolTxs();
+    const { blockIndex, merkleRoot } = await this.submitAllCurrentPoolTxs();
+
+    this.validateTargetBlockForSubmittedTxs(poolId, blockIndex);
 
     return {
       poolId,
@@ -49,27 +57,22 @@ export default class PlasmaOperator extends PlasmaUser {
   }
 
 
-  /**
-   *
-   * @param tx Transaction object
-   * @private
-   */
   async addTxToPool(tx) {
-    const uid = tx.getUIDhex();
+    const depositId = tx.getDepositNonceHex();
 
-    if (this.currentTxsPool[uid]) {
-      if (debug) console.log(`[plasmaOperator] uid ${uid} is taken`);
-      await this.submitPoolTxs();
+    if (this.currentTxsPool[depositId]) {
+      if (debug) console.log(`[plasmaOperator] depositId ${depositId} is taken`);
+      await this.submitAllCurrentPoolTxs();
     }
 
     const poolId = this.getCurrentPoolId();
 
-    if (this.currentTxsPool[uid]) {
-      throw new Error(`[plasmaOperator] we already have Tx with UID: ${uid} in this pool`);
+    if (this.currentTxsPool[depositId]) {
+      throw new Error(`[plasmaOperator] we already have Tx with depositId: ${depositId} in this pool`);
     }
 
-    this.currentTxsPool[uid] = tx.tid();
-    this.poolsTxObjects[poolId][uid] = tx;
+    this.currentTxsPool[depositId] = tx.tid();
+    this.poolsTxObjects[poolId][depositId] = tx;
 
     this.poolsMerkleTree[poolId] = new SparseMerkleTree(this.currentTxsPool);
     const newRoot = this.poolsMerkleTree[poolId].getHexRoot();
@@ -82,50 +85,41 @@ export default class PlasmaOperator extends PlasmaUser {
     return this.poolsMerkleTree.length - 1;
   }
 
-  getCurrentTxsPool(uid) {
-    if (typeof uid === 'undefined') return this.currentTxsPool;
-    return (typeof this.currentTxsPool[uid] === 'undefined') ? null : this.currentTxsPool[uid];
-  }
 
-
-  // submit all txs to the Plasma Contract
-  async submitPoolTxs() {
+  async submitAllCurrentPoolTxs() {
     const poolId = this.getCurrentPoolId();
-
-    const blockIndex = await this.plasmaCash.blockCount();
 
     const root = this.poolsMerkleTree[poolId].getHexRoot();
     if (debug) console.log(`[PlasmaOperator] submitBlock(), ${poolId} => ${root}`);
 
     const res = await this.plasmaCash.submitBlock(
       root,
-      blockIndex.toString(10),
+      this.blockIndex,
       { from: this.address },
     );
+
     this.createNewPool();
 
     return res.LogSubmitBlock[0];
   }
 
-  getTx(poolId, uid) {
-    if (typeof this.poolsTxObjects[poolId] === 'undefined') throw Error(`Block number:${uid} does not exist`);
-    if (typeof this.poolsTxObjects[poolId][uid] === 'undefined') throw Error(`Tx for uid:${uid} does not exist`);
-    return this.poolsTxObjects[poolId][uid];
+  validateTargetBlockForSubmittedTxs(poolId, blockIndex) {
+    Object.keys(this.poolsTxObjects[poolId]).map((nonce) => {
+      const tx = this.getTx(poolId, nonce);
+      if (tx.targetBlock.toString() !== blockIndex.toString(10)) {
+        throw new Error(`targetBlock error, got ${typeof tx.targetBlock}:${tx.targetBlock} should be ${typeof blockIndex}:valid`);
+      }
+      return true;
+    });
   }
 
-  getTxBytes(poolId, uid) {
-    return this.getTx(poolId, uid).toRLPHex();
+  getTx(poolId, depositId) {
+    if (typeof this.poolsTxObjects[poolId] === 'undefined') throw Error(`Pool ID: ${poolId} does not exist`);
+    if (typeof this.poolsTxObjects[poolId][depositId] === 'undefined') throw Error(`Tx for uid:${depositId} does not exist`);
+    return this.poolsTxObjects[poolId][depositId];
   }
 
-  getTxSignature(poolId, uid) {
-    return this.getTx(poolId, uid).signature;
-  }
-
-  getProof(poolId, uid) {
-    return this.poolsMerkleTree[poolId].getHexProofForIndex(uid);
-  }
-
-  getRoot(poolId) {
-    return this.poolsMerkleTree[poolId].getHexRoot();
+  getProof(poolId, depositId) {
+    return this.poolsMerkleTree[poolId].getHexProofForIndex(depositId);
   }
 }

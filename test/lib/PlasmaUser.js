@@ -1,4 +1,5 @@
 import Transaction from './Transaction';
+import TokenHistory from './TokenHistory';
 
 const debug = 0;
 
@@ -13,35 +14,9 @@ export default class PlasmaUser {
       writable: true,
     });
 
-    Object.defineProperty(this, 'uids', {
+    Object.defineProperty(this, 'depositsNonces', {
       value: [],
       writable: true,
-    });
-
-    Object.defineProperty(this, 'prevBlock', {
-      value: 0,
-      writable: true,
-    });
-
-    Object.defineProperty(this, 'tidHex2poolId', {
-      value: {},
-      writable: true,
-    });
-
-    Object.defineProperty(this, 'root2blockIndex', {
-      value: {},
-      writable: true,
-    });
-
-    // uid => blockIndex
-    // user stores only last information about uid
-    Object.defineProperty(this, 'uid2blockIndex', {
-      value: {},
-    });
-
-    // blockIndex => array of uids
-    Object.defineProperty(this, 'blockIndex2uid', {
-      value: {},
     });
   }
 
@@ -51,29 +26,82 @@ export default class PlasmaUser {
 
   async depositETH(amount) {
     const coinAddr = '0x0';
+
     const res = await this.plasmaCash.deposit(
       coinAddr,
       amount,
       { from: this.address, value: amount },
     );
 
-    const [{ uid }] = res.LogDeposit;
+    const [{ depositId }] = res.LogDeposit;
 
-    const uidHex = Transaction.toPaddedHexString(uid.toString(16));
-    this.uids.push(uidHex);
+    const depositIdHex = Transaction.toPaddedHexString(depositId.toString(16));
+    this.depositsNonces[depositIdHex] = new TokenHistory();
   }
 
-  // this will allow us to cheat - ant this is good thing for testing
-  setPrevBlockNumber(prevBlock) {
-    this.prevBlock = prevBlock;
+  getLastDepositNonce() {
+    return Object.keys(this.depositsNonces).pop();
   }
 
-  async sendPETH(uid, newOwnerObj) {
-    const tx = new Transaction(this.address, uid, this.prevBlock, newOwnerObj.address);
+  getPrevTxBlockFor(depositId) {
+    return this.depositsNonces[depositId].getPrevTxBlockIndex();
+  }
+
+
+  async createUTXO(depositId, newOwnerObj) {
+    const prevTxBlock = this.getPrevTxBlockFor(depositId);
+    const targetBlock = await this.plasmaCash.chainBlockIndex();
+
+    const tx = new Transaction(
+      this.address,
+      depositId,
+      prevTxBlock,
+      newOwnerObj.address,
+      targetBlock.toString(10),
+    );
+
     const sig = await tx.sign();
 
     if (debug) console.log(`[plasmaUser] ${this.address} signed tx, signature: ${sig}`);
 
     return tx;
+  }
+
+
+  updateTokenHistoryAfterOperatorSubmitBlock(operator) {
+    Object.keys(this.depositsNonces).map((depositId) => {
+      if (this.depositsNonces[depositId] === null) return false;
+
+      const poolId = operator.getCurrentPoolId() - 1;
+      const proof = operator.getProof(poolId, depositId);
+      this.depositsNonces[depositId].addNonSpent(proof);
+      return true;
+    });
+  }
+
+  transferNonceHistoryToNewOwner(nonce, newOwner) {
+    const tokenHistory = this.depositsNonces[nonce];
+    this.depositsNonces[nonce] = null;
+    /* eslint-disable-next-line */
+    newOwner.depositsNonces[nonce] = tokenHistory;
+  }
+
+  saveTxToHistory(nonce, tx) {
+    this.depositsNonces[nonce].updateSpent(tx);
+  }
+
+  getRootAndTxFromHistory(depositId, blockIndex) {
+    // blockIndex - 1, because on-chain we start from 1, and here from 0
+    return this.depositsNonces[depositId]
+      ? this.depositsNonces[depositId].history[blockIndex - 1]
+      : null;
+  }
+
+  printHistory(depositId) {
+    console.log(`history for ${depositId} has ${this.depositsNonces[depositId].history.length} items.`);
+    this.depositsNonces[depositId].history.map((item, i) => {
+      console.log(`[${i}] tx: ${typeof item.tx}, proof:${typeof item.proof}`);
+      return true;
+    });
   }
 }

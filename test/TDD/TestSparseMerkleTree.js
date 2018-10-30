@@ -86,11 +86,11 @@ describe('SparseMerkleTree', () => {
       merkleTree.getRoot(), Buffer.from('0'), '0x6a632b283169bb0e4587422b081393d1c2e29af3c36c24735985e9c95c7c0a02')).to.equal(true);
   });
 
-  xit('testInit2', () => {
+  it('testInit2', () => {
     expect(() => new SparseMerkleTree({
       8: Buffer.from('0'),
       1: Buffer.from('1'),
       2: Buffer.from('2'),
-    }, 4)).to.throw();
+    }, 2)).to.throw();
   });
 });

@@ -1,3 +1,4 @@
+import { BigNumber } from 'bignumber.js';
 import { assert } from 'chai';
 import { privGen, privToAddr } from '../helpers/privKeyGen';
 import Transaction from '../lib/Transaction';
@@ -10,12 +11,13 @@ const PlasmaCash = artifacts.require('PlasmaCash');
 
 
 contract('Transaction object', async (accounts) => {
-  const prevBlock = 1;
+  const prevTxBlockIndex = 1;
+  const targetBlock = 2;
   const uid = '0x1';
   let plasmaInstance;
 
   before(async () => {
-    plasmaInstance = await PlasmaCash.new(60 * 60 * 24 * 7);
+    plasmaInstance = await PlasmaCash.new(60 * 60 * 24 * 7, 1000);
   });
 
 
@@ -27,8 +29,28 @@ contract('Transaction object', async (accounts) => {
     let signature;
 
     it('should allow to create tx object', async () => {
-      tx = new Transaction(sender, uid, prevBlock, newOwner);
+      tx = new Transaction(sender, uid, prevTxBlockIndex, newOwner, targetBlock);
       assert.isObject(tx);
+    });
+
+    it('should allow to encode and decode', async () => {
+      tx = new Transaction(sender, uid, prevTxBlockIndex, newOwner, targetBlock);
+      const bytes = tx.toRLP();
+      const decodeTx = Transaction.fromRLP(bytes);
+
+      assert.strictEqual(tx.depositId, decodeTx.depositId, 'decode fail: nonce');
+      assert(BigNumber(tx.prevTxBlockIndex).eq(decodeTx.prevTxBlockIndex), 'decode fail: parent block');
+      assert.strictEqual(tx.newOwner, decodeTx.newOwner, 'decode fail: parent block');
+    });
+
+    it('should allow to encode and decode (hex)', async () => {
+      tx = new Transaction(sender, 0, 0, newOwner, 0);
+      const bytes = tx.toRLPHex();
+      const decodeTx = Transaction.fromRLP(bytes);
+
+      assert.strictEqual(tx.depositId, decodeTx.depositId, 'decode fail: nonce');
+      assert(BigNumber(tx.prevTxBlockIndex).eq(decodeTx.prevTxBlockIndex), 'decode fail: parent block');
+      assert.strictEqual(tx.newOwner, decodeTx.newOwner, 'decode fail: parent block');
     });
 
     it('tx should have correct initial values', async () => {
@@ -37,13 +59,13 @@ contract('Transaction object', async (accounts) => {
     });
 
     it('should be different tid for different transactions', async () => {
-      const tx1 = new Transaction(sender, uid, prevBlock, newOwner);
-      const tx2 = new Transaction(sender, uid, prevBlock + 1, newOwner);
+      const tx1 = new Transaction(sender, uid, prevTxBlockIndex, newOwner, targetBlock);
+      const tx2 = new Transaction(sender, uid, prevTxBlockIndex + 1, newOwner, targetBlock + 1);
       assert.notEqual(tx1.tidHex(), tx2.tidHex());
     });
 
     it('should NOT allow to change tx attributes', () => {
-      ['uid', 'prevBlock', 'newOwner', 'sender'].map((k) => {
+      ['depositId', 'prevTxBlockIndex', 'newOwner'].map((k) => {
         const invalid = [];
         try {
           tx[k] = '123';
@@ -99,7 +121,7 @@ contract('Transaction object', async (accounts) => {
 
 
     it('should allow to create tx object with custom sender and custom new owner', async () => {
-      tx = new Transaction(sender, uid, prevBlock, newOwner);
+      tx = new Transaction(sender, uid, prevTxBlockIndex, newOwner, targetBlock);
       assert.isObject(tx);
     });
 

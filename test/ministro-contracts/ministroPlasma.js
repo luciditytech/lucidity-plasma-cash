@@ -1,6 +1,9 @@
 import { BigNumber } from 'bignumber.js';
 import { assert } from 'chai';
 import { proxyExecute } from '../ministro-utils';
+import { bothOrNone, CurrentTimestamp } from '../helpers/binary';
+import Transaction from '../lib/Transaction';
+
 
 // const Web3 = require('web3');
 // let web3 = new Web3(Web3.currentProvider || 'http://localhost:8545');
@@ -45,111 +48,201 @@ function ministroContract() {
 
     if (!expectThrow) {
       assert.exists(results.LogDeposit, 'missing LogDeposit event');
-      const [deposited] = results.LogDeposit;
+      const [{ depositOwner, depositId, depositAmount }] = results.LogDeposit;
 
-      assert.strictEqual(deposited.depositor, txAttr.from, 'invalid depositor');
+      assert.strictEqual(depositOwner, txAttrLocal.from, 'invalid deposit owner');
+      assert(BigNumber(depositAmount).eq(amount2send), 'invalid deposit amount');
 
-      const { depositor, amount } = await app.deposits(deposited.uid.toString(10));
+      const { owner, amount } = await app.deposits(depositId);
 
-      assert.strictEqual(deposited.depositor, depositor, 'invalid depositor');
-      assert.strictEqual(deposited.amount.toString(10), amount, 'invalid amount');
+      assert.strictEqual(owner, depositOwner, 'invalid owner/depositOwner');
+      assert(BigNumber(amount).eq(depositAmount), 'invalid depositAmount');
     }
 
     return results;
   };
 
-  app.startDepositExit = async (uid, txAttr, expectThrow) => {
+  app.startDepositExit = async (depNonce, txAttr, expectThrow) => {
+    const currTimestamp = CurrentTimestamp();
+
     const txAttrLocal = app.getTxAttr(txAttr);
-    const action = () => app.instance.startDepositExit(uid, txAttrLocal);
+    const action = () => app.instance.startDepositExit(depNonce, txAttrLocal);
+
+    const prevBalance = expectThrow ? null : await app.balances(txAttrLocal.from);
 
     const results = await app.executeAction(action, txAttrLocal, null, null, expectThrow);
 
     if (!expectThrow) {
-      assert.exists(results.ExitStarted, 'missing ExitStarted event');
-      const [{ priority }] = results.ExitStarted;
+      await app.assertStartExit(results, depNonce, 0, txAttrLocal, currTimestamp);
 
-      assert(BigNumber(priority).gt(0), 'priority is empty');
-
-      assert.exists(results.LogStartDepositExit, 'missing LogStartDepositExit event');
-      const [startDepositExit] = results.LogStartDepositExit;
-
-      const { exitor, timestamp, invalid } = await app.exits(startDepositExit.uid.toString(10));
-
-      assert.strictEqual(exitor, startDepositExit.depositor, 'invalid depositor/exitor');
-      assert(BigNumber(timestamp).gt(0), 'invalid timestamp');
-      assert.isFalse(invalid, 'invalid should be false');
+      app.assertExitBond(results, txAttrLocal, prevBalance);
     }
 
     return results;
   };
 
 
-  app.finalizeExits = async (txAttr, expectThrow) => {
+  app.assertStartExit = async (results, depNonce, blkIndex, txAttrLocal, timeBeforeTx) => {
+    assert.exists(results.LogStartExit, 'missing LogStartExit event');
+
+    const [{
+      executor, depositId, blockIndex, finalizeTime,
+    }] = results.LogStartExit;
+
+    assert.strictEqual(executor, txAttrLocal.from, 'invalid executor');
+    assert(BigNumber(depositId).eq(depNonce), 'invalid deposit nonce');
+    assert(BigNumber(blockIndex).eq(blkIndex), 'invalid blkIndex');
+
+    assert(BigNumber(finalizeTime).gt(timeBeforeTx), 'invalid finalizeTime');
+
+    const {
+      exitor, finalAt, invalid,
+    } = await app.exits(depositId, blockIndex);
+
+    assert.strictEqual(exitor, txAttrLocal.from, 'invalid exitor');
+    assert(BigNumber(finalAt).eq(finalizeTime), 'invalid finalAt/finalizeTime');
+    assert.isFalse(invalid, 'exit should be valid');
+  };
+
+
+  app.assertExitBond = async (results, txAttrLocal, prevBalance) => {
+    const exitBond = await app.exitBond();
+    if (BigNumber(txAttrLocal.value).gt(exitBond)) {
+      assert.exists(results.LogAddBalance, 'missing LogAddBalance event');
+      const [{ receiver, amount }] = results.LogAddBalance;
+
+      assert(BigNumber(txAttrLocal.value).minus(exitBond).eq(amount), 'invalid change from value');
+      assert.strictEqual(receiver, txAttrLocal.from, 'executor should get price');
+
+      const balance = await app.balances(txAttrLocal.from);
+      assert(BigNumber(prevBalance).plus(amount).eq(balance), 'invalid balance after exit');
+    }
+  };
+
+  app.startTxExit = async (
+    txBytes,
+    proof,
+    signature,
+    spender,
+    targetBlock,
+    txAttr,
+    expectThrow,
+  ) => {
+    const currTimestamp = CurrentTimestamp();
+
     const txAttrLocal = app.getTxAttr(txAttr);
-    const action = () => app.instance.finalizeExits(txAttrLocal);
+    const action = () => app.instance.startTxExit(
+      txBytes,
+      proof,
+      signature,
+      spender,
+      targetBlock,
+      txAttrLocal,
+    );
+
+    const prevBalance = expectThrow ? null : await app.balances(txAttrLocal.from);
 
     const results = await app.executeAction(action, txAttrLocal, null, null, expectThrow);
 
     if (!expectThrow) {
-      assert(!results.LogFinalizeExit ? !results.LogAddBalance : !!results.LogAddBalance, 'there should be both or none events');
+      const tx = Transaction.fromRLP(txBytes);
+
+      await app.assertStartExit(
+        results,
+        tx.depositId,
+        targetBlock,
+        txAttrLocal,
+        currTimestamp,
+      );
+
+      app.assertExitBond(results, txAttrLocal, prevBalance);
+    }
+
+    return results;
+  };
+
+
+  app.challengeExit = async (
+    transactionBytes,
+    proof,
+    signature,
+    targetBlock,
+    txAttr,
+    expectThrow,
+  ) => {
+    const txAttrLocal = app.getTxAttr(txAttr);
+    const action = () => app.instance.challengeExit(
+      transactionBytes, proof, signature, targetBlock, txAttrLocal,
+    );
+
+    const prevBalance = expectThrow ? null : await app.balances(txAttrLocal.from);
+
+    const results = await app.executeAction(action, txAttrLocal, null, null, expectThrow);
+
+    if (!expectThrow) {
+      assert.exists(results.LogChallengeExit, 'missing LogChallengeExit event');
+      const [{ challenger, depositId, blockIndex }] = results.LogChallengeExit;
+
+      assert.strictEqual(challenger, txAttrLocal.from, 'invalid challenger');
+
+      const tx = Transaction.fromRLP(transactionBytes);
+
+      assert(BigNumber(tx.depositId).eq(depositId), 'invalid depositId');
+      assert(BigNumber(tx.prevTxBlockIndex).eq(blockIndex), 'invalid prevTxBlockIndex/blockIndex');
+
+      const exit = await app.exits(depositId, blockIndex);
+      assert(exit.invalid, 'exit should be invalid after challenge');
+
+      assert.exists(results.LogAddBalance, 'missing LogAddBalance event');
+      const [{ receiver, amount }] = results.LogAddBalance;
+
+      const exitBond = await app.exitBond();
+      assert(BigNumber(amount).eq(exitBond), 'invalid amount/exitBond');
+      assert.strictEqual(receiver, txAttrLocal.from, 'executor should get price/balance');
+
+      const balance = await app.balances(txAttrLocal.from);
+      assert(BigNumber(prevBalance).plus(exitBond).eq(balance), 'invalid balance after challenge');
+    }
+
+    return results;
+  };
+
+  app.finalizeExits = async (depNonce, txAttr, expectThrow) => {
+    const txAttrLocal = app.getTxAttr(txAttr);
+    const action = () => app.instance.finalizeExits(depNonce, txAttrLocal);
+
+    const results = await app.executeAction(action, txAttrLocal, null, null, expectThrow);
+
+    if (!expectThrow) {
+      assert.strictEqual(bothOrNone(results.LogFinalizeExit, results.LogAddBalance), 0, 'there should be both or none');
       if (!results.LogFinalizeExit) return results;
 
       assert.strictEqual(results.LogFinalizeExit.length, results.LogAddBalance.length, 'we should have equal count of events');
 
-
       results.LogFinalizeExit.map(async (finalizedExit, i) => {
         const {
-          depositor, amount, uid, exitTimestamp,
+          exitor, amount, depositId, blockIndex,
         } = finalizedExit;
+
         const logAddBalance = results.LogAddBalance[i];
 
-        assert.strictEqual(depositor, logAddBalance.receiver, 'invalid depositor/receiver');
-        assert.strictEqual(amount.toString(10), logAddBalance.amount.toString(10), 'invalid amount');
-        assert(BigNumber(exitTimestamp).lte(Date.now()), 'invalid exitTimestamp');
+        assert.strictEqual(exitor, logAddBalance.receiver, 'invalid exitor/receiver');
+        assert(BigNumber(amount).eq(logAddBalance.amount), 'invalid amount');
 
-        const exit = await app.exits(uid.toString(10));
-        assert.strictEqual(parseInt(exit.exitor, 10), 0, 'exitor should be deleted');
-        assert.strictEqual(parseInt(exit.timestamp, 10), 0, 'timestamp should be deleted');
+        const exit = await app.exits(depositId, blockIndex);
+        assert(BigNumber(exit.exitor).eq(0), 'exitor should be deleted');
+        assert(BigNumber(exit.finalAt).eq(0), 'timestamp should be deleted');
         assert.isFalse(exit.invalid, 'invalid invalid :)');
 
-        const deposit = await app.deposits(uid.toString(10));
-        assert.strictEqual(parseInt(deposit.depositor, 10), 0, 'depositor should be deleted');
-        assert.strictEqual(parseInt(deposit.amount, 10), 0, 'amount should be deleted');
+        const deposit = await app.deposits(depositId);
+        assert(BigNumber(deposit.owner).eq(0), 'owner should be deleted');
+        assert(BigNumber(deposit.amount).eq(0), 'amount should be empty');
       });
     }
 
     return results;
   };
 
-  app.challengeDepositExit = async (
-    blockIndex,
-    transactionBytes,
-    proof,
-    signature,
-    txAttr,
-    expectThrow,
-  ) => {
-    const txAttrLocal = app.getTxAttr(txAttr);
-    const action = () => app.instance.challengeDepositExit(
-      blockIndex, transactionBytes, proof, signature, txAttrLocal,
-    );
-
-    const results = await app.executeAction(
-      action, txAttrLocal, 1, 'LogChallengeDepositExit', expectThrow,
-    );
-
-    if (!expectThrow) {
-      const [LogChallengeDepositExit] = results.LogChallengeDepositExit;
-
-      assert(BigNumber(LogChallengeDepositExit.blockIndex).eq(blockIndex), 'invalid blockIndex');
-      assert.strictEqual(LogChallengeDepositExit.challenger, txAttrLocal.from, 'invalid challenger');
-
-      const { invalid } = await app.exits(LogChallengeDepositExit.uid.toString(10));
-      assert(invalid, 'exit should be invalid after challange');
-    }
-
-    return results;
-  };
 
   app.setOperator = async (operator, operatorStatus, txAttr, expectThrow) => {
     const txAttrLocal = app.getTxAttr(txAttr);
@@ -167,6 +260,8 @@ function ministroContract() {
 
 
   app.withdraw = async (txAttr, expectThrow) => {
+    // TODO check user balance before and after
+
     // let balance = expectThrow ? null : await web3.eth.getBalance(txAttr.from);
 
     const txAttrLocal = app.getTxAttr(txAttr);
@@ -185,14 +280,32 @@ function ministroContract() {
     return results;
   };
 
-  app.blockCount = async () => app.instance.blockCount.call();
+  app.depositId = async () => app.instance.depositId.call();
+  app.exitBond = async () => app.instance.exitBond.call();
+  app.chainBlockIndex = async () => app.instance.chainBlockIndex.call();
   app.operators = async addr => app.instance.operators.call(addr);
 
-  app.exits = async (uid) => {
-    const res = await app.instance.exits.call(uid);
+  app.exitQueue = async (depositId) => {
+    app.instance.exitQueue.call(BigNumber(depositId).toString(10));
+  };
+
+  app.exits = async (depositId, blockIndex) => {
+    const res = await app.instance.exits.call(
+      BigNumber(depositId).toString(10),
+      BigNumber(blockIndex).toString(10),
+    );
     return {
       exitor: res[0],
-      timestamp: res[1].toString(10),
+      finalAt: res[1].toString(10),
+      invalid: res[2],
+    };
+  };
+
+  app.txsExits = async (nonce) => {
+    const res = await app.instance.txsExits.call(BigNumber(nonce).toString(10));
+    return {
+      exitor: res[0],
+      finalAt: res[1].toString(10),
       invalid: res[2],
     };
   };
@@ -206,10 +319,10 @@ function ministroContract() {
   };
 
 
-  app.deposits = async (uid) => {
-    const res = await app.instance.deposits.call(uid);
+  app.deposits = async (depositId) => {
+    const res = await app.instance.deposits.call(BigNumber(depositId).toString(10));
     return {
-      depositor: res[0],
+      owner: res[0],
       amount: res[1].toString(10),
     };
   };
