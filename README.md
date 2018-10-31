@@ -1,18 +1,63 @@
-# Lucidity Plasma Cash
+# Lucidity Plasma Cash :collision:
 
-Implements a Solidity contract to manage Plasma side-chain on Ethereum.
+PoC implementation of Plasma Cash. 
+Smart contract is written in Solidity for Ethereum. 
+Sidechain functionality (plasma user and operator) is written in Javascript.
 
-## Install dependencies with
+![plasma cash](./sdo_solareruption_nasa.jpg)
+
+## Overview
+
+This implementation of plasma cash is a bit different from general specification/guidelines.  
+ Main differences:
+ - it treats each deposit as individual tree/chain.
+ - exits are stored in matrix, where keys are `depositNonce` and `childBlockIndex`
+   so each exit has its own place.
+ - every deposit has its own exit queue
+ - priority is not based on exit time, but based on block index
+ - challenges uses single transaction instead of two (current and previous)
+ - there is no need to reply to challenge
+ - you need to finalize exits for each deposit separately
+
+The implementation was tested against below scenarios and all test are done with success:
+  * exits on deposit scenario
+  * spend scenario
+  * double spent scenario
+  * invalid block scenario
+  * withheld block scenario
+
+## Install
+
+To run this, you will need on your machine: 
+- nodejs
+- truffle
+- ganache-cli
+
+then:
 
 ```
 $ npm install
+$ git hf init
 ```
 
-## Run test cases:
+## Run tests
+
+**Warning** - there are around 135 tests. 
+Tests include delay that is needed for challenge time. 
+Because of that, they will take some time - up to several minutes.  
+Depend on how fast is your machine, there might be a need to adjust delay time.
+Test error message will let you know if you need to set higher delay time or not.
+You can do it in `./test/helpers/createScenarioObjects.js`, 
+find `challengeTimeoutSec` variable and set valid time.
+
+You can choose different tests to run:
 
 * `truffle test` or `npm run test`
 * check for linters errors: `npm run lint`
-* With code coverage: `npm run coverage`
+* With code coverage: `npm run coverage` - 
+**IMPORTANT**: turn off local RPC client before run this test.  
+Coverage results:
+![coverage test results](./coverage-tests.png "coverage test results")
 
 ### Issues during tests
 
@@ -21,18 +66,38 @@ $ npm install
 If you experience above issue during coverage test, then create file 
 `touch ./allFiredEvents` each time before you run test command, it should help.
 
-## Details
+### Test results
 
-The implementation is based on UTXO model. It allows depositing, submitting blocks and withdrawing.
-The current implementation is not designed to withstand double-spends caused by fraudulent operators.
-Operators are selected by the contract creator. PoS consensus mechanism is coming in the future.
+Here you can see results and path for main tests scenarios for plasma cash:
 
-## TODO
+* exits on deposit scenario
+![deposit scenario](./scenario-deposits.png)
+* spend scenario
+![spent scenario](./scenario-spent.png)
+* double spent scenario
+![double spent scenario](./scenario-double-spent.png)
+* invalid block scenario 
+![invalid block scenario](./scenario-invalid-history.png)
+* withheld block scenario
+![withheld block scenario](./scenario-withheld-block.png)
+  
+You can find files with this tests in `test/scenarios/` directory.
 
-- Implement a way to challenge withdrawals;
-- Implement a consensus layer;
-- Optimize the code in order to spend less gas;
-- Implement a better serialization mechanism.
+### TODO
+
+- test multiple tx for single submit block
+- optimize SparseMerkleTree:  
+ie. if we have deposits for #3, #9, #20, then not create merkle tree for all slots, 
+instead just for #3..#21.
+- make exit bond to be maximum of (exit bond, deposit amount)?
+- test if we could optimize storage for history of transactions ie: 
+resign from storing empty blocks (where no tx on our deposit was made)
+- maybe add max number of exits at one time, 
+when finalizing or stop after first valid one?
+- add support for tokens (`_currency`)
+- try to simplify implementation 
+by removing signature/spender check in plasma contract
+- test it against invalid `targetBlock`
 
 ## Licensed under MIT.
 

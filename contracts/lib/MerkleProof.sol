@@ -13,7 +13,10 @@ library MerkleProof {
    * @param _root Merkle root
    * @param _leaf Leaf of Merkle tree
    */
-  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public pure returns (bool) {
+  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index)
+  public
+  pure
+  returns (bool) {
     // Check if proof length is a multiple of 32
     if (_proof.length % 32 != 0) {
       return false;
