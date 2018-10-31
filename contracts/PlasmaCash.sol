@@ -131,7 +131,7 @@ contract PlasmaCash is Withdrawable, Operable {
   payable {
 
     Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
-    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, _spender, _targetBlock);
+    validateProofSignaturesAndTxData(transaction, _proof, _signature, _spender, _targetBlock, false);
 
     require(exits[transaction.depositId][_targetBlock].finalAt == 0, "exit already exists");
 
@@ -171,7 +171,7 @@ contract PlasmaCash is Withdrawable, Operable {
     // we will allow users to challenge exit even after challenge time, until someone finalize it
     // allow: require(exit.finalAt > block.timestamp, "exit is final, you can't challenge it");
 
-    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, exitPtr.exitor, _targetBlock);
+    validateProofSignaturesAndTxData(transaction, _proof, _signature, exitPtr.exitor, _targetBlock, true);
 
     exitPtr.invalid = true;
 
@@ -181,19 +181,21 @@ contract PlasmaCash is Withdrawable, Operable {
   }
 
 
-  function validateProofSignaturesAndTxData(bytes _txBytes, bytes _proof, bytes _signature, address _signer, uint256 _targetBlock)
-  public
+  function validateProofSignaturesAndTxData(Transaction.TX memory transaction, bytes _proof, bytes _signature, address _signer, uint256 _targetBlock, bool checkSig)
+  private
   view
   returns (bool) {
-    Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
     require(transaction.prevTxBlockIndex < chainBlockIndex, "blockchain is the future, but your tx must be from the past");
     require(_targetBlock > transaction.prevTxBlockIndex, "invalid targetBlock/prevTxBlockIndex");
 
     bytes32 hash = Transaction.hashTransaction(transaction);
 
-    require(transaction.newOwner != _signer, "preventing sending loop");
     require(_proof.verifyProof(blocks[_targetBlock].merkleRoot, hash, transaction.depositId), "MerkleProof.verifyProof() failed");
-    require(Transaction.checkSig(_signer, hash, _signature), "Transaction.checkSig() failed");
+
+    if (checkSig) {
+      require(transaction.newOwner != _signer, "preventing sending loop");
+      require(Transaction.checkSig(_signer, hash, _signature), "Transaction.checkSig() failed");
+    }
 
     return true;
   }

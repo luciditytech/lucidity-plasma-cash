@@ -11,7 +11,7 @@ Sidechain functionality (plasma user and operator) is written in Javascript.
 This implementation of plasma cash is a bit different from general specification/guidelines.  
  Main differences:
  - it treats each deposit as individual tree/chain.
- - exits are stored in matrix, where keys are `depositNonce` and `childBlockIndex`
+ - exits are stored in matrix, where keys are `depositId` and `blockIndex`
    so each exit has its own place.
  - every deposit has its own exit queue
  - priority is not based on exit time, but based on block index
