@@ -98,6 +98,8 @@ when finalizing or stop after first valid one?
 - try to simplify implementation 
 by removing signature/spender check in plasma contract
 - test it against invalid `targetBlock`
+- get rid of Transaction.checkSig in validateProofSignaturesAndTxData. It's useless because anyone can sign a transaction and we don't provide two tranaction to makes sure prevTxBlockIndex is correct at this point.
+- should we use RLP to encode transactions because Transaction struct only uses uint256 and address types
 
 ## Licensed under MIT.
 
