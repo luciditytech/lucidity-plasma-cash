@@ -1,0 +1,30 @@
+{
+  "extends": "airbnb-base",
+  "env": {
+    "mocha": true
+  },
+  "globals": {
+    "artifacts": true,
+    "assert": true,
+    "beforeEach": true,
+    "contract": true,
+    "describe": true,
+    "it": true,
+    "web3": true
+  },
+  "rules": {
+    "no-console": "off",
+    "prefer-destructuring": ["error", {
+      "VariableDeclarator": {
+        "array": true,
+        "object": true
+      },
+      "AssignmentExpression": {
+        "array": false, // this will allow for: var bar = foo[0] <- access array with index
+        "object": true
+      }
+    }, {
+      "enforceForRenamedProperties": false
+    }]
+  }
+}

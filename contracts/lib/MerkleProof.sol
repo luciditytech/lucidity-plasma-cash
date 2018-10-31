@@ -1,4 +1,4 @@
-pragma solidity ^0.4.18;
+pragma solidity ^0.4.24;
 
 /*
  * @title MerkleProof
@@ -13,7 +13,10 @@ library MerkleProof {
    * @param _root Merkle root
    * @param _leaf Leaf of Merkle tree
    */
-  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index) public pure returns (bool) {
+  function verifyProof(bytes _proof, bytes32 _root, bytes32 _leaf, uint256 _index)
+  public
+  pure
+  returns (bool) {
     // Check if proof length is a multiple of 32
     if (_proof.length % 32 != 0) {
       return false;
@@ -32,10 +35,10 @@ library MerkleProof {
 
       if (_index % 2 == 0) {
         // Hash(current computed hash + current element of the proof)
-        computedHash = keccak256(computedHash, proofElement);
+        computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
       } else {
         // Hash(current element of the proof + current computed hash)
-        computedHash = keccak256(proofElement, computedHash);
+        computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
       }
       _index = _index / 2;
     }
