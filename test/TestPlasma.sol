@@ -2,17 +2,17 @@ pragma solidity ^0.4.17;
 
 import "truffle/Assert.sol";
 import "truffle/DeployedAddresses.sol";
-import "../contracts/Plasma.sol";
+import "../contracts/PlasmaCash.sol";
 
 contract TestPlasma {
 
-    Plasma plasma = new Plasma(60);
+    PlasmaCash plasma = new PlasmaCash(60, 1000);
 
     function testSetOperator() public {
         Assert.equal(plasma.setOperator(this, true), true, "Set an operator.");
     }
 
     function testOwnerIsOperator() public {
-        Assert.equal(plasma.isOperator(), true, "Owner is an operator.");
+        Assert.equal(plasma.operators(this), true, "Owner is an operator.");
     }
 }

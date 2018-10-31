@@ -2,25 +2,55 @@
   "name": "plasma-cash",
   "version": "1.0.0",
   "description": "",
-  "main": "truffle-config.js",
+  "main": "truffle.js",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "./node_modules/.bin/mocha --reporter spec"
+    "mocha": "./node_modules/.bin/mocha --reporter spec",
+    "test": "scripts/test.sh",
+    "coverage": "./node_modules/.bin/solidity-coverage",
+    "lint:solium": "solium --dir ./contracts",
+    "lint:js": "./node_modules/.bin/eslint ./test --no-ignore --ext .js --fix",
+    "lint": "npm run lint:js && npm run lint:solium"
+  },
+  "eslintIgnore": [
+    "truffle.js",
+    ".solcover.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luciditytech/lucidity-plasma-cash.git"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "bignumber.js": "^6.0.0",
+    "babel-polyfill": "^6.26.0",
+    "babel-register": "^6.26.0",
+    "bignumber.js": "^7.2.1",
+    "ethereumjs-util": "^5.2.0",
+    "mocha": "^5.2.0",
+    "openzeppelin-solidity": "1.12.0",
+    "rlp": "^2.1.0",
+    "secp256k1": "^3.5.2",
+    "web3": "^1.0.0-beta.36",
+    "web3-utils": "^1.0.0-beta.36"
+  },
+  "devDependencies": {
+    "babel-preset-env": "^1.7.0",
+    "bluebird": "^3.5.2",
+    "bignumber.js": "^7.2.1",
     "chai": "^4.1.2",
-    "ethereumjs-util": "^5.1.5",
-    "keccak": "^1.4.0",
-    "mocha": "^5.0.1",
-    "rlp": "^2.0.0",
-    "web3": "^1.0.0-beta.30",
-    "web3-utils": "^1.0.0-beta.30",
-    "zeppelin-solidity": "1.6.0"
+    "eslint": "^5.5.0",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-plugin-import": "^2.14.0",
+    "ganache-cli": "^6.1.8",
+    "lodash": "^4.17.10",
+    "pify": "^4.0.0",
+    "solidity-coverage": "^0.5.11",
+    "solium": "^1.1.8",
+    "truffle": "^4.1.14",
+    "web3-utils": "^1.0.0-beta.36"
   }
 }
