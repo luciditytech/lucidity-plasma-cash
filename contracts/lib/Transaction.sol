@@ -13,6 +13,7 @@ library Transaction {
     uint256 depositId;
     uint256 prevTxBlockIndex;
     address newOwner;
+    uint256 targetBlock;
   }
 
   /// @dev this is ETH prefix, so we can be sure, data was signed in EVM
@@ -20,11 +21,12 @@ library Transaction {
 
   function createTransaction(bytes rlp) internal pure returns (TX memory) {
     RLP.RLPItem[] memory txList = rlp.toRLPItem().toList();
-    require(txList.length == 3, "txList.length == 3");
+    require(txList.length == 4, "txList.length == 4");
     return TX({
       depositId: txList[0].toUint(),
       prevTxBlockIndex: txList[1].toUint(),
-      newOwner: txList[2].toAddress()
+      newOwner: txList[2].toAddress(),
+      targetBlock: txList[3].toUint()
     });
   }
 
@@ -36,6 +38,6 @@ library Transaction {
   internal
   pure
   returns (bytes32) {
-    return keccak256(abi.encodePacked(_tx.depositId, _tx.prevTxBlockIndex, _tx.newOwner));
+    return keccak256(abi.encodePacked(_tx.depositId, _tx.prevTxBlockIndex, _tx.newOwner, _tx.targetBlock));
   }
 }

@@ -1,7 +1,8 @@
 import { assert } from 'chai';
 import { BigNumber } from 'bignumber.js';
-import { scenarioObjects, challengeTimeoutSec, exitBond } from '../helpers/createScenarioObjects';
-import { changeOneRandomData, CurrentTimestamp } from '../helpers/binary';
+import { scenarioObjects, challengeTimeoutSecPass, exitBond } from '../helpers/createScenarioObjects';
+import { changeOneRandomData } from '../helpers/binary';
+import { moveForward } from '../helpers/SpecHelper';
 
 
 let ministroPlasma;
@@ -14,8 +15,6 @@ let aliceNonce;
 let bob;
 const bobDeposit = 20;
 let bobSpentNonce;
-
-let startDepositExitTime = 0;
 
 
 contract('Plasma Cash - Deposits scenario', async (accounts) => {
@@ -120,10 +119,6 @@ contract('Plasma Cash - Deposits scenario', async (accounts) => {
         });
 
         it('bob can start deposit exit on spent deposit', async () => {
-          // we start counting time here and not with alice before,
-          // because we want both exits timestamps be valid when we finalize exits
-          startDepositExitTime = CurrentTimestamp();
-
           await ministroPlasma.startDepositExit(
             bobSpentNonce,
             { from: bob.address, value: exitBond },
@@ -198,7 +193,6 @@ contract('Plasma Cash - Deposits scenario', async (accounts) => {
                 transactionBytes,
                 proof,
                 tx.signature,
-                tx.targetBlock,
                 { from: alice.address },
               );
               assert.exists(res.LogChallengeExit);
@@ -220,13 +214,6 @@ contract('Plasma Cash - Deposits scenario', async (accounts) => {
             // TODO:alice can NOT start exit Tx on token from bob, because bob has exit in progress
 
             describe('when challenge timeout DID NOT pass', async () => {
-              before(() => {
-                assert(BigNumber(startDepositExitTime).gt(0), 'missing start time');
-                // plus(5) is to be sure, we are before exit time
-                const deltaTime = BigNumber(CurrentTimestamp()).minus(startDepositExitTime).plus(5);
-                assert(BigNumber(deltaTime).lte(challengeTimeoutSec), `set challengeTimeoutSec at least ${deltaTime}`);
-              });
-
               it('alice valid deposit exit can NOT be finalize', async () => {
                 const res = await ministroPlasma.finalizeExits(aliceNonce, { from: accounts[0] });
                 assert.notExists(res.LogFinalizeExit, 'no way!');
@@ -242,22 +229,12 @@ contract('Plasma Cash - Deposits scenario', async (accounts) => {
             });
 
             describe('when challenge Timeout pass', async () => {
-              before((done) => {
-                const deltaTime = BigNumber(CurrentTimestamp()).minus(startDepositExitTime);
-                const msDelay = BigNumber(challengeTimeoutSec + 1)
-                  .minus(deltaTime)
-                  .times(1000)
-                  .toString(10);
-
-                if (BigNumber(msDelay).lte(0)) done();
-                else setTimeout(() => { done(); }, msDelay);
+              before(async () => {
+                await moveForward(challengeTimeoutSecPass);
               });
 
               describe('when somebody finalize exits on alice deposit', async () => {
                 before(async () => {
-                  const deltaTime = BigNumber(CurrentTimestamp()).minus(startDepositExitTime);
-                  assert(BigNumber(deltaTime).gt(challengeTimeoutSec), 'this is not the right time!');
-
                   const res = await ministroPlasma.finalizeExits(aliceNonce, { from: accounts[0] });
                   assert.strictEqual(res.LogFinalizeExit.length, 1, 'only alice exit should be there');
                 });

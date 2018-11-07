@@ -1,7 +1,7 @@
 import { BigNumber } from 'bignumber.js';
 import { assert } from 'chai';
-import { scenarioObjects, exitBond, challengeTimeoutSec } from '../helpers/createScenarioObjects';
-import { CurrentTimestamp } from '../helpers/binary';
+import { scenarioObjects, exitBond, challengeTimeoutSecPass } from '../helpers/createScenarioObjects';
+import { moveForward } from '../helpers/SpecHelper';
 
 let ministroPlasma;
 let plasmaOperator;
@@ -9,8 +9,6 @@ let plasmaOperator;
 let users;
 const usersDeposits = [1, 2, 4, 8];
 const txs = [];
-
-let startExitTime = 0;
 
 contract('Plasma Cash', async (accounts) => {
   before(async () => {
@@ -95,7 +93,6 @@ contract('Plasma Cash', async (accounts) => {
               proof,
               tx.signature,
               tx.sender,
-              tx.targetBlock,
               { from: users[3].address, value: exitBond },
               true,
             );
@@ -114,11 +111,8 @@ contract('Plasma Cash', async (accounts) => {
                 proof,
                 tx.signature,
                 tx.sender,
-                tx.targetBlock,
                 { from: users[1].address, value: exitBond },
               );
-
-              startExitTime = CurrentTimestamp();
             });
 
 
@@ -133,7 +127,6 @@ contract('Plasma Cash', async (accounts) => {
                 transactionBytes,
                 proof,
                 tx.signature,
-                tx.targetBlock,
                 { from: users[2].address },
                 true,
               );
@@ -141,19 +134,8 @@ contract('Plasma Cash', async (accounts) => {
 
 
             describe('when challenge Timeout pass for both exits (no challenges)', async () => {
-              before((done) => {
-                const deltaTime = BigNumber(CurrentTimestamp()).minus(startExitTime);
-                const msDelay = BigNumber(challengeTimeoutSec + 3)
-                  .minus(deltaTime)
-                  .times(1000)
-                  .toString(10);
-
-                if (BigNumber(msDelay).lte(0)) done();
-                else {
-                  setTimeout(() => {
-                    done();
-                  }, msDelay);
-                }
+              before(async () => {
+                await moveForward(challengeTimeoutSecPass);
               });
 
               describe('when we finalize exits on spent deposit', async () => {

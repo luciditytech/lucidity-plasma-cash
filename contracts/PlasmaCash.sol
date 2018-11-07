@@ -125,24 +125,24 @@ contract PlasmaCash is Withdrawable, Operable {
     emit LogStartExit(msg.sender, _depositId, 0, finalAt);
   }
 
-  function startTxExit(bytes _txBytes, bytes _proof, bytes _signature, address _spender, uint256 _targetBlock)
+  function startTxExit(bytes _txBytes, bytes _proof, bytes _signature, address _spender)
   public
   onlyWithBond
   payable {
 
     Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
-    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, _spender, _targetBlock);
+    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, _spender);
 
-    require(exits[transaction.depositId][_targetBlock].finalAt == 0, "exit already exists");
+    require(exits[transaction.depositId][transaction.targetBlock].finalAt == 0, "exit already exists");
 
     Deposit storage depositPtr = deposits[transaction.depositId];
     require(depositPtr.amount > 0, "deposit not exists");
     require(transaction.newOwner == msg.sender, "you are not the owner");
 
 
-    uint256 finalAt = createExitAndPriority(transaction.depositId, _targetBlock);
+    uint256 finalAt = createExitAndPriority(transaction.depositId, transaction.targetBlock);
 
-    emit LogStartExit(msg.sender, transaction.depositId, _targetBlock, finalAt);
+    emit LogStartExit(msg.sender, transaction.depositId, transaction.targetBlock, finalAt);
   }
 
 
@@ -156,7 +156,7 @@ contract PlasmaCash is Withdrawable, Operable {
   }
 
 
-  function challengeExit(bytes _txBytes, bytes _proof, bytes _signature, uint256 _targetBlock)
+  function challengeExit(bytes _txBytes, bytes _proof, bytes _signature)
   public {
 
     Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
@@ -171,7 +171,7 @@ contract PlasmaCash is Withdrawable, Operable {
     // we will allow users to challenge exit even after challenge time, until someone finalize it
     // allow: require(exit.finalAt > block.timestamp, "exit is final, you can't challenge it");
 
-    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, exitPtr.exitor, _targetBlock);
+    validateProofSignaturesAndTxData(_txBytes, _proof, _signature, exitPtr.exitor);
 
     exitPtr.invalid = true;
 
@@ -181,18 +181,18 @@ contract PlasmaCash is Withdrawable, Operable {
   }
 
 
-  function validateProofSignaturesAndTxData(bytes _txBytes, bytes _proof, bytes _signature, address _signer, uint256 _targetBlock)
+  function validateProofSignaturesAndTxData(bytes _txBytes, bytes _proof, bytes _signature, address _signer)
   public
   view
   returns (bool) {
     Transaction.TX memory transaction = Transaction.createTransaction(_txBytes);
     require(transaction.prevTxBlockIndex < chainBlockIndex, "blockchain is the future, but your tx must be from the past");
-    require(_targetBlock > transaction.prevTxBlockIndex, "invalid targetBlock/prevTxBlockIndex");
+    require(transaction.targetBlock > transaction.prevTxBlockIndex, "invalid targetBlock/prevTxBlockIndex");
 
     bytes32 hash = Transaction.hashTransaction(transaction);
 
     require(transaction.newOwner != _signer, "preventing sending loop");
-    require(_proof.verifyProof(blocks[_targetBlock].merkleRoot, hash, transaction.depositId), "MerkleProof.verifyProof() failed");
+    require(_proof.verifyProof(blocks[transaction.targetBlock].merkleRoot, hash, transaction.depositId), "MerkleProof.verifyProof() failed");
     require(Transaction.checkSig(_signer, hash, _signature), "Transaction.checkSig() failed");
 
     return true;
@@ -239,6 +239,7 @@ contract PlasmaCash is Withdrawable, Operable {
 
     }
   }
+
 
 
   // helpers methods - just for testing, can be removed for release
