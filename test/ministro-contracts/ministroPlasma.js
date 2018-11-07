@@ -33,7 +33,7 @@ function ministroContract() {
       const block = await app.blocks(blockSubmitted.blockIndex.toString(10));
 
       assert.strictEqual(blockSubmitted.merkleRoot, block.merkleRoot, 'merkleRoot on blockchain is different');
-      assert(BigNumber(block.timestamp).minus(Date.now()).lt(60), 'block timeout is older that 60seconds, and it was just submitted');
+      assert(BigNumber(block.timestamp).gt(0), 'block timestamp is empty');
     }
 
     return results;
@@ -92,7 +92,6 @@ function ministroContract() {
     assert.strictEqual(executor, txAttrLocal.from, 'invalid executor');
     assert(BigNumber(depositId).eq(depNonce), 'invalid deposit nonce');
     assert(BigNumber(blockIndex).eq(blkIndex), 'invalid blkIndex');
-
     assert(BigNumber(finalizeTime).gt(timeBeforeTx), 'invalid finalizeTime');
 
     const {
@@ -124,7 +123,6 @@ function ministroContract() {
     proof,
     signature,
     spender,
-    targetBlock,
     txAttr,
     expectThrow,
   ) => {
@@ -136,7 +134,6 @@ function ministroContract() {
       proof,
       signature,
       spender,
-      targetBlock,
       txAttrLocal,
     );
 
@@ -150,7 +147,7 @@ function ministroContract() {
       await app.assertStartExit(
         results,
         tx.depositId,
-        targetBlock,
+        tx.targetBlock,
         txAttrLocal,
         currTimestamp,
       );
@@ -166,13 +163,12 @@ function ministroContract() {
     transactionBytes,
     proof,
     signature,
-    targetBlock,
     txAttr,
     expectThrow,
   ) => {
     const txAttrLocal = app.getTxAttr(txAttr);
     const action = () => app.instance.challengeExit(
-      transactionBytes, proof, signature, targetBlock, txAttrLocal,
+      transactionBytes, proof, signature, txAttrLocal,
     );
 
     const prevBalance = expectThrow ? null : await app.balances(txAttrLocal.from);
@@ -285,9 +281,10 @@ function ministroContract() {
   app.chainBlockIndex = async () => app.instance.chainBlockIndex.call();
   app.operators = async addr => app.instance.operators.call(addr);
 
-  app.exitQueue = async (depositId) => {
-    app.instance.exitQueue.call(BigNumber(depositId).toString(10));
-  };
+  app.getExitQueue = async (depositId, index) => app.instance.exitQueue.call(
+    BigNumber(depositId).toString(10),
+    BigNumber(index).toString(10),
+  );
 
   app.exits = async (depositId, blockIndex) => {
     const res = await app.instance.exits.call(

@@ -7,7 +7,8 @@ const ministroPlasmaUtil = require('../ministro-contracts/ministroPlasma');
 
 const ministroPlasma = ministroPlasmaUtil();
 
-const challengeTimeoutSec = 50;
+const challengeTimeoutSec = 60 * 60 * 24;
+const challengeTimeoutSecPass = challengeTimeoutSec + 5;
 const exitBond = 1000;
 
 const scenarioObjects = async (accounts, noOfUsers) => {
@@ -39,4 +40,5 @@ export {
   challengeTimeoutSec,
   exitBond,
   scenarioObjects,
+  challengeTimeoutSecPass,
 };

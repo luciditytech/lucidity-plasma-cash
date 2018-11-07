@@ -1,7 +1,7 @@
 import { BigNumber } from 'bignumber.js';
 import { assert } from 'chai';
 import { scenarioObjects, exitBond, challengeTimeoutSec } from '../helpers/createScenarioObjects';
-import { CurrentTimestamp } from '../helpers/binary';
+import { moveForward } from '../helpers/SpecHelper';
 
 let ministroPlasma;
 let plasmaOperator;
@@ -9,8 +9,6 @@ let plasmaOperator;
 let users;
 const usersDeposits = [1, 2, 4, 8, 16, 32, 64];
 const txs = [];
-
-let startExitTime = 0;
 
 contract('Plasma Cash', async (accounts) => {
   before(async () => {
@@ -162,10 +160,6 @@ contract('Plasma Cash', async (accounts) => {
 
 
               describe('when users start exits with invalid transactions', async () => {
-                before(async () => {
-                  startExitTime = CurrentTimestamp();
-                });
-
                 it('history should have 5 transactions', async () => {
                   assert.strictEqual(users[5].depositsNonces[spentNonce].history.length, 5, 'invalid history length');
                 });
@@ -184,7 +178,6 @@ contract('Plasma Cash', async (accounts) => {
                     proof,
                     tx.signature,
                     tx.sender,
-                    tx.targetBlock,
                     { from: users[i].address, value: exitBond },
                   );
                 }
@@ -212,11 +205,8 @@ contract('Plasma Cash', async (accounts) => {
                       proof,
                       tx.signature,
                       tx.sender,
-                      tx.targetBlock,
                       { from: users[2].address, value: exitBond },
                     );
-
-                    startExitTime = CurrentTimestamp();
                   });
 
                   it('operator should NOT be able to challenge user#2 valid exit with invalid tx#2', async () => {
@@ -230,22 +220,14 @@ contract('Plasma Cash', async (accounts) => {
                       transactionBytes,
                       proof,
                       tx.signature,
-                      tx.targetBlock,
                       { from: plasmaOperator.address },
                       true,
                     );
                   });
 
                   describe('when challenge Timeout pass', async () => {
-                    before((done) => {
-                      const deltaTime = BigNumber(CurrentTimestamp()).minus(startExitTime);
-                      const msDelay = BigNumber(challengeTimeoutSec + 1)
-                        .minus(deltaTime)
-                        .times(1000)
-                        .toString(10);
-
-                      if (BigNumber(msDelay).lte(0)) done();
-                      else setTimeout(() => { done(); }, msDelay);
+                    before(async () => {
+                      await moveForward(challengeTimeoutSec + 2);
                     });
 
 

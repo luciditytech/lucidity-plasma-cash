@@ -65,7 +65,7 @@ export default class Transaction {
   }
 
   toRLP() {
-    return RLP.encode([this.depositId, this.prevTxBlockIndex, this.newOwner]);
+    return RLP.encode([this.depositId, this.prevTxBlockIndex, this.newOwner, this.targetBlock]);
   }
 
   toRLPHex() {
@@ -85,7 +85,7 @@ export default class Transaction {
       { type: 'uint', value: this.depositId },
       { type: 'uint', value: this.prevTxBlockIndex },
       { type: 'address', value: this.newOwner },
-      // { type: 'uint', value: this.targetBlock },
+      { type: 'uint', value: this.targetBlock },
     ];
   }
 
@@ -146,11 +146,13 @@ export default class Transaction {
     const depositId = `0x${tx[0].toString('hex')}`;
     const prevTxBlockIndex = `0x${tx[1].toString('hex')}`;
     const newOwner = `0x${tx[2].toString('hex')}`;
+    const targetBlock = `0x${tx[3].toString('hex')}`;
 
     return {
       depositId: depositId === '0x' ? '0x0' : depositId,
       prevTxBlockIndex: prevTxBlockIndex === '0x' ? '0x0' : prevTxBlockIndex,
       newOwner,
+      targetBlock,
     };
   }
 }
