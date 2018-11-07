@@ -1,7 +1,7 @@
 import { BigNumber } from 'bignumber.js';
 import { assert } from 'chai';
-import { scenarioObjects, exitBond, challengeTimeoutSec } from '../helpers/createScenarioObjects';
-import { CurrentTimestamp } from '../helpers/binary';
+import { scenarioObjects, exitBond, challengeTimeoutSecPass } from '../helpers/createScenarioObjects';
+import { moveForward } from '../helpers/SpecHelper';
 
 let ministroPlasma;
 let plasmaOperator;
@@ -9,8 +9,6 @@ let plasmaOperator;
 let users;
 const usersDeposits = [10, 200, 3000];
 
-
-let startExitTime = 0;
 
 contract('Plasma Cash', async (accounts) => {
   before(async () => {
@@ -30,18 +28,18 @@ contract('Plasma Cash', async (accounts) => {
 
 
   describe('SPEND COIN SCENARIO on user#0 deposit', async () => {
-    let spentNonce;
+    let spentDepositId;
     let blockIndex;
 
     before(async () => {
-      spentNonce = users[0].getLastDepositNonce();
+      spentDepositId = users[0].getLastDepositNonce();
     });
 
     describe('when user#0 transfers token to user#1', async () => {
       let tx1;
       before(async () => {
-        tx1 = await users[0].createUTXO(spentNonce, users[1]);
-        users[0].transferNonceHistoryToNewOwner(spentNonce, users[1]);
+        tx1 = await users[0].createUTXO(spentDepositId, users[1]);
+        users[0].transferNonceHistoryToNewOwner(spentDepositId, users[1]);
 
         ({ blockIndex } = await plasmaOperator.submitSingleTx(tx1));
 
@@ -50,7 +48,7 @@ contract('Plasma Cash', async (accounts) => {
           return true;
         });
 
-        users[1].saveTxToHistory(spentNonce, tx1);
+        users[1].saveTxToHistory(spentDepositId, tx1);
       });
 
       it('tx user#0 => user#1 should has valid prev and target block', () => {
@@ -59,12 +57,12 @@ contract('Plasma Cash', async (accounts) => {
       });
 
       it('user#0 should have NO history of spent deposit', () => {
-        const res = users[0].getRootAndTxFromHistory(spentNonce, blockIndex);
+        const res = users[0].getRootAndTxFromHistory(spentDepositId, blockIndex);
         assert.isNull(res, 'there should be no data');
       });
 
       it('user#1 should have history of spent deposit', () => {
-        const { proof, tx } = users[1].getRootAndTxFromHistory(spentNonce, blockIndex);
+        const { proof, tx } = users[1].getRootAndTxFromHistory(spentDepositId, blockIndex);
         assert.exists(proof, 'there should be a proof');
         assert.isObject(tx, 'there should be tx object');
       });
@@ -72,8 +70,8 @@ contract('Plasma Cash', async (accounts) => {
       describe('when user#1 transfers token to user#2', async () => {
         let tx2;
         before(async () => {
-          tx2 = await users[1].createUTXO(spentNonce, users[2]);
-          users[1].transferNonceHistoryToNewOwner(spentNonce, users[2]);
+          tx2 = await users[1].createUTXO(spentDepositId, users[2]);
+          users[1].transferNonceHistoryToNewOwner(spentDepositId, users[2]);
 
           ({ blockIndex } = await plasmaOperator.submitSingleTx(tx2));
 
@@ -82,7 +80,7 @@ contract('Plasma Cash', async (accounts) => {
             return true;
           });
 
-          users[2].saveTxToHistory(spentNonce, tx2);
+          users[2].saveTxToHistory(spentDepositId, tx2);
         });
 
 
@@ -92,18 +90,18 @@ contract('Plasma Cash', async (accounts) => {
         });
 
         it('user#1 should have NO history of spent deposit', () => {
-          const res = users[1].getRootAndTxFromHistory(spentNonce, blockIndex);
+          const res = users[1].getRootAndTxFromHistory(spentDepositId, blockIndex);
           assert.isNull(res, 'there should be no data');
         });
 
         it('user#2 should have history of spent deposit', () => {
-          const { proof, tx } = users[2].getRootAndTxFromHistory(spentNonce, blockIndex);
+          const { proof, tx } = users[2].getRootAndTxFromHistory(spentDepositId, blockIndex);
           assert.exists(proof, 'there should be a proof');
           assert.isObject(tx, 'there should be tx object');
         });
 
         it('user#1 can NOT start exit tx without bond value', async () => {
-          const { proof, tx } = users[2].getRootAndTxFromHistory(spentNonce, tx1.targetBlock);
+          const { proof, tx } = users[2].getRootAndTxFromHistory(spentDepositId, tx1.targetBlock);
           const transactionBytes = tx.toRLPHex();
 
           await ministroPlasma.startTxExit(
@@ -111,7 +109,6 @@ contract('Plasma Cash', async (accounts) => {
             proof,
             tx.signature,
             tx.sender,
-            tx.targetBlock,
             { from: users[1].address, value: 0 },
             true,
           );
@@ -119,7 +116,7 @@ contract('Plasma Cash', async (accounts) => {
 
         describe('when user#2 is current deposit owner and user#1 start exit on spent deposit', async () => {
           before(async () => {
-            const { proof, tx } = users[2].getRootAndTxFromHistory(spentNonce, tx1.targetBlock);
+            const { proof, tx } = users[2].getRootAndTxFromHistory(spentDepositId, tx1.targetBlock);
 
             const transactionBytes = tx.toRLPHex();
 
@@ -128,28 +125,32 @@ contract('Plasma Cash', async (accounts) => {
               proof,
               tx.signature,
               users[0].address,
-              tx.targetBlock,
               { from: users[1].address, value: exitBond },
             );
           });
 
           describe('when user#2 challenge user#1 exit', async () => {
             before(async () => {
-              const { proof, tx } = users[2].getRootAndTxFromHistory(spentNonce, tx2.targetBlock);
+              const { proof, tx } = users[2].getRootAndTxFromHistory(
+                spentDepositId,
+                tx2.targetBlock,
+              );
               const transactionBytes = tx.toRLPHex();
 
               await ministroPlasma.challengeExit(
                 transactionBytes,
                 proof,
                 tx.signature,
-                tx.targetBlock,
                 { from: users[2].address },
               );
             });
 
             describe('when user#2 start tx exit on his new token', async () => {
               before(async () => {
-                const { proof, tx } = users[2].getRootAndTxFromHistory(spentNonce, tx2.targetBlock);
+                const { proof, tx } = users[2].getRootAndTxFromHistory(
+                  spentDepositId,
+                  tx2.targetBlock,
+                );
                 const transactionBytes = tx.toRLPHex();
 
                 await ministroPlasma.startTxExit(
@@ -157,37 +158,37 @@ contract('Plasma Cash', async (accounts) => {
                   proof,
                   tx.signature,
                   users[1].address,
-                  tx.targetBlock,
                   { from: users[2].address, value: exitBond },
                 );
-
-
-                startExitTime = CurrentTimestamp();
               });
 
               it('should be NOT possible to cancel user#2 exit with its own tx', async () => {
-                const { proof, tx } = users[2].getRootAndTxFromHistory(spentNonce, tx2.targetBlock);
+                const { proof, tx } = users[2].getRootAndTxFromHistory(
+                  spentDepositId,
+                  tx2.targetBlock,
+                );
                 const transactionBytes = tx.toRLPHex();
 
                 await ministroPlasma.challengeExit(
                   transactionBytes,
                   proof,
                   tx.signature,
-                  tx.targetBlock,
                   { from: users[1].address },
                   true,
                 );
               });
 
               it('should be NOT possible to cancel user#2 exit with old tx', async () => {
-                const { proof, tx } = users[2].getRootAndTxFromHistory(spentNonce, tx1.targetBlock);
+                const { proof, tx } = users[2].getRootAndTxFromHistory(
+                  spentDepositId,
+                  tx1.targetBlock,
+                );
                 const transactionBytes = tx.toRLPHex();
 
                 await ministroPlasma.challengeExit(
                   transactionBytes,
                   proof,
                   tx.signature,
-                  tx.targetBlock,
                   { from: users[1].address },
                   true,
                 );
@@ -195,16 +196,9 @@ contract('Plasma Cash', async (accounts) => {
 
 
               describe('when challenge timeout DID NOT pass', async () => {
-                before(() => {
-                  assert(BigNumber(startExitTime).gt(0), 'missing start time');
-                  // plus(5) is to be sure, we are before exit time
-                  const deltaTime = BigNumber(CurrentTimestamp()).minus(startExitTime).plus(5);
-                  assert(BigNumber(deltaTime).lte(challengeTimeoutSec), `set challengeTimeoutSec at least ${deltaTime}`);
-                });
-
                 it('tx exit can NOT be finalize', async () => {
                   const res = await ministroPlasma.finalizeExits(
-                    spentNonce,
+                    spentDepositId,
                     { from: accounts[0] },
                     false,
                   );
@@ -214,19 +208,18 @@ contract('Plasma Cash', async (accounts) => {
 
 
               describe('when challenge Timeout pass', async () => {
-                before((done) => {
-                  const deltaTime = BigNumber(CurrentTimestamp()).minus(startExitTime);
-                  const msDelay = BigNumber(challengeTimeoutSec + 1)
-                    .minus(deltaTime)
-                    .times(1000)
-                    .toString(10);
+                before(async () => {
+                  await moveForward(challengeTimeoutSecPass);
+                });
 
-                  if (BigNumber(msDelay).lte(0)) done();
-                  else setTimeout(() => { done(); }, msDelay);
+                it('user#2 exit should have priority', async () => {
+                  const priority = await ministroPlasma.getExitQueue(spentDepositId, 0);
+
+                  assert(BigNumber(priority).eq(tx2.targetBlock), 'invalid priority');
                 });
 
                 it('spent deposit should be secure and exist', async () => {
-                  const { owner, amount } = await ministroPlasma.deposits(spentNonce);
+                  const { owner, amount } = await ministroPlasma.deposits(spentDepositId);
 
                   assert.strictEqual(owner, users[0].address, 'invalid owner');
                   assert(BigNumber(amount).eq(usersDeposits[0]), 'invalid amount');
@@ -235,14 +228,14 @@ contract('Plasma Cash', async (accounts) => {
                 describe('when we finalize exit for spent deposit', async () => {
                   before(async () => {
                     const res = await ministroPlasma.finalizeExits(
-                      spentNonce,
+                      spentDepositId,
                       { from: accounts[0] },
                     );
                     assert.exists(res.LogFinalizeExit, 'should be final');
                   });
 
                   it('spent deposit should be empty', async () => {
-                    const { owner, amount } = await ministroPlasma.deposits(spentNonce);
+                    const { owner, amount } = await ministroPlasma.deposits(spentDepositId);
 
                     assert.strictEqual(parseInt(owner, 10), 0);
                     assert.strictEqual(parseInt(amount, 10), 0);

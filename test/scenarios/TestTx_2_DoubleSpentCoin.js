@@ -1,16 +1,15 @@
 import { BigNumber } from 'bignumber.js';
 import { assert } from 'chai';
-import { scenarioObjects, exitBond, challengeTimeoutSec } from '../helpers/createScenarioObjects';
-import { CurrentTimestamp } from '../helpers/binary';
+import {
+  scenarioObjects, exitBond, challengeTimeoutSec, challengeTimeoutSecPass,
+} from '../helpers/createScenarioObjects';
+import { moveForward } from '../helpers/SpecHelper';
 
 let ministroPlasma;
 let plasmaOperator;
 
 let users;
 const usersDeposits = [10, 200, 3000];
-
-
-let startExitTime = 0;
 
 contract('Plasma Cash', async (accounts) => {
   before(async () => {
@@ -89,17 +88,14 @@ contract('Plasma Cash', async (accounts) => {
               proof,
               tx.signature,
               users[0].address,
-              tx.targetBlock,
               { from: users[2].address, value: exitBond },
             );
-
-            startExitTime = CurrentTimestamp();
           });
 
           describe('when user#1 noticed a problem after some time (but before challenge time pass)', async () => {
-            const delayTimeSec = 5;
-            before((done) => {
-              setTimeout(() => done(), delayTimeSec * 1000);
+            const halfChallangeTime = Math.ceil(challengeTimeoutSec / 2);
+            before(async () => {
+              await moveForward(halfChallangeTime);
             });
 
             it('should be NOT possible to cancel user#2 exit with user#1 tx', async () => {
@@ -110,7 +106,6 @@ contract('Plasma Cash', async (accounts) => {
                 transactionBytes,
                 proof,
                 tx.signature,
-                tx.targetBlock,
                 { from: users[1].address },
                 true,
               );
@@ -125,22 +120,14 @@ contract('Plasma Cash', async (accounts) => {
                 proof,
                 tx.signature,
                 users[0].address,
-                tx.targetBlock,
                 { from: users[1].address, value: exitBond },
               );
             });
 
 
             describe('when challenge Timeout for user#2 pass', async () => {
-              before((done) => {
-                const deltaTime = BigNumber(CurrentTimestamp()).minus(startExitTime);
-                const msDelay = BigNumber(challengeTimeoutSec + 1)
-                  .minus(deltaTime)
-                  .times(1000)
-                  .toString(10);
-
-                if (BigNumber(msDelay).lte(0)) done();
-                else setTimeout(() => { done(); }, msDelay);
+              before(async () => {
+                await moveForward(halfChallangeTime + 2);
               });
 
               describe('when we want to finalize exits on spent deposit', async () => {
@@ -167,8 +154,8 @@ contract('Plasma Cash', async (accounts) => {
                 });
 
                 describe('when challenge Timeout for user#1 pass', async () => {
-                  before((done) => {
-                    setTimeout(() => { done(); }, (delayTimeSec + 1) * 1000);
+                  before(async () => {
+                    await moveForward(challengeTimeoutSecPass);
                   });
 
                   describe('when we finalize exits on spent deposit', async () => {
