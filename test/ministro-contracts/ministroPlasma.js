@@ -1,6 +1,6 @@
 import { BigNumber } from 'bignumber.js';
 import { assert } from 'chai';
-import { proxyExecute } from '../ministro-utils';
+import ministroExecute from 'ministro-tool';
 import { bothOrNone, CurrentTimestamp } from '../helpers/binary';
 import Transaction from '../lib/Transaction';
 
@@ -14,7 +14,7 @@ function ministroContract() {
 
 
   /* eslint-disable-next-line */
-  app.__proto__ = proxyExecute();
+  app.__proto__ = ministroExecute();
 
 
   app.submitBlock = async (merkleRoot, blockIndex, txAttr, expectThrow) => {
